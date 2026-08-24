@@ -24,6 +24,7 @@ export function ChatInput({ onSend, disabled }: Props) {
     state: voiceState,
     isSupported,
     errorMessage,
+    interimText,
     startListening,
     stopListening,
     resetState,
@@ -87,8 +88,13 @@ export function ChatInput({ onSend, disabled }: Props) {
   let placeholderText = 'Message Zana…';
 
   if (displayVoiceState === 'LISTENING') {
-    hintText = '🔴 Listening… Speak your command now.';
-    placeholderText = 'Listening…';
+    if (interimText) {
+      hintText = `🔴 Listening: "${interimText}"`;
+      placeholderText = interimText;
+    } else {
+      hintText = '🔴 Listening… Speak your command now (e.g. "Play Believer")';
+      placeholderText = 'Listening…';
+    }
   } else if (displayVoiceState === 'PROCESSING' && voiceTriggeredRef.current) {
     hintText = '⏳ Zana is processing your voice command…';
     placeholderText = 'Processing…';
