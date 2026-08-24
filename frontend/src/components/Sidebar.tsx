@@ -13,7 +13,7 @@ interface Props {
 const NAV_ITEMS = [
   { icon: '💬', label: 'Chat', active: true, phase: null },
   { icon: '🎵', label: 'Spotify Player', active: true, phase: 'Active' },
-  { icon: '🎤', label: 'Voice Assistant', active: false, phase: 'Phase 3' },
+  { icon: '🎤', label: 'Voice Assistant', active: true, phase: 'Active' },
   { icon: '🧠', label: 'AI Brain', active: false, phase: 'Phase 4' },
 ];
 
@@ -50,7 +50,7 @@ export const Sidebar: React.FC<Props> = ({
       {/* Phase badge */}
       <div className="phase-badge" role="status" aria-label="Current phase">
         <span className="phase-dot" aria-hidden="true" />
-        Phase 2 · Spotify Playback
+        Phase 3 · Voice Assistant
       </div>
 
       {/* Spotify Connection Card */}

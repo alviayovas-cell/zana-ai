@@ -1,5 +1,6 @@
-import { useState, useRef, useCallback, useEffect, type KeyboardEvent } from 'react';
+import { useState, useRef, useCallback, type KeyboardEvent } from 'react';
 import { useSpeechRecognition } from '../hooks/useSpeechRecognition';
+import type { VoiceState } from '../hooks/useSpeechRecognition';
 import './ChatInput.css';
 
 interface Props {
@@ -10,34 +11,38 @@ interface Props {
 export function ChatInput({ onSend, disabled }: Props) {
   const [value, setValue] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Track whether this specific chat-loading cycle was triggered by voice
+  const voiceTriggeredRef = useRef(false);
 
   const handleTranscript = useCallback((text: string) => {
+    console.log('[VOICE] Sending transcript to chat pipeline:', text);
+    voiceTriggeredRef.current = true;
     onSend(text);
   }, [onSend]);
 
   const {
     state: voiceState,
-    setState: setVoiceState,
     isSupported,
     errorMessage,
     startListening,
     stopListening,
+    resetState,
   } = useSpeechRecognition({ onTranscript: handleTranscript });
 
-  // Sync assistant busy state with voice state
-  useEffect(() => {
-    if (disabled && voiceState === 'PROCESSING') {
-      // Keep it in processing
-    } else if (disabled && voiceState === 'IDLE') {
-      setVoiceState('PROCESSING');
-    } else if (!disabled && (voiceState === 'PROCESSING' || voiceState === 'RESPONDING')) {
-      setVoiceState('IDLE');
-    }
-  }, [disabled, voiceState, setVoiceState]);
+  // Derive the display state: only show "Processing" hint if voice triggered the request
+  let displayVoiceState: VoiceState = voiceState;
+  if (voiceState === 'PROCESSING' && !disabled) {
+    // Backend already responded — reset voice state
+    displayVoiceState = 'IDLE';
+    voiceTriggeredRef.current = false;
+    // Defer reset to avoid calling setState during render
+    queueMicrotask(() => resetState());
+  }
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim();
     if (!trimmed || disabled) return;
+    voiceTriggeredRef.current = false; // Text input, not voice
     onSend(trimmed);
     setValue('');
     if (textareaRef.current) {
@@ -64,26 +69,30 @@ export function ChatInput({ onSend, disabled }: Props) {
   };
 
   const handleMicClick = () => {
-    if (voiceState === 'LISTENING') {
+    if (displayVoiceState === 'LISTENING') {
       stopListening();
-    } else {
+    } else if (displayVoiceState === 'IDLE' || displayVoiceState === 'ERROR') {
       startListening();
     }
   };
 
   const canSend = value.trim().length > 0 && !disabled;
 
-  // Set message hints based on current voice state
-  let hintText = 'Press Enter to send · Shift+Enter for new line';
+  // The mic button should only be disabled when voice is actively processing,
+  // NOT when chat is loading from a typed message.
+  const isMicDisabled = !isSupported || displayVoiceState === 'PROCESSING';
+
+  // --- Hint & placeholder text ---
+  let hintText = 'Press Enter to send · Shift+Enter for new line · 🎤 Click mic for voice';
   let placeholderText = 'Message Zana…';
 
-  if (voiceState === 'LISTENING') {
+  if (displayVoiceState === 'LISTENING') {
     hintText = '🔴 Listening… Speak your command now.';
     placeholderText = 'Listening…';
-  } else if (voiceState === 'PROCESSING') {
-    hintText = '⏳ Zana is processing your request…';
+  } else if (displayVoiceState === 'PROCESSING' && voiceTriggeredRef.current) {
+    hintText = '⏳ Zana is processing your voice command…';
     placeholderText = 'Processing…';
-  } else if (errorMessage) {
+  } else if (displayVoiceState === 'ERROR' && errorMessage) {
     hintText = `⚠️ ${errorMessage}`;
   } else if (!isSupported) {
     hintText = '⚠️ Voice input is not supported in this browser. Please type your message.';
@@ -91,24 +100,30 @@ export function ChatInput({ onSend, disabled }: Props) {
 
   return (
     <div className="chat-input-wrapper">
-      <div className={`chat-input-box ${disabled ? 'disabled' : ''} ${voiceState === 'LISTENING' ? 'listening' : ''}`}>
+      <div className={`chat-input-box ${disabled ? 'disabled' : ''} ${displayVoiceState === 'LISTENING' ? 'listening' : ''}`}>
         
         {/* Voice Microphone Button */}
         <button
           id="chat-voice-btn"
-          className={`mic-btn ${voiceState === 'LISTENING' ? 'listening' : ''} ${!isSupported ? 'unsupported' : ''}`}
+          className={`mic-btn ${displayVoiceState === 'LISTENING' ? 'listening' : ''} ${!isSupported ? 'unsupported' : ''}`}
           onClick={handleMicClick}
-          disabled={disabled || !isSupported}
-          aria-label={voiceState === 'LISTENING' ? 'Stop listening' : 'Start voice input'}
-          title={!isSupported ? 'Voice input not supported in this browser' : ''}
+          disabled={isMicDisabled}
+          aria-label={displayVoiceState === 'LISTENING' ? 'Stop listening' : 'Start voice input'}
+          title={
+            !isSupported
+              ? 'Voice input not supported in this browser'
+              : displayVoiceState === 'LISTENING'
+                ? 'Click to stop listening'
+                : 'Click to speak a command'
+          }
         >
-          {voiceState === 'LISTENING' ? (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="8" x2="12" y2="16" />
-              <line x1="8" y1="12" x2="16" y2="12" />
+          {displayVoiceState === 'LISTENING' ? (
+            /* Stop / cancel icon */
+            <svg viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12" rx="2" />
             </svg>
           ) : (
+            /* Microphone icon */
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
               <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
@@ -128,7 +143,7 @@ export function ChatInput({ onSend, disabled }: Props) {
           onKeyDown={handleKeyDown}
           onInput={handleInput}
           rows={1}
-          disabled={disabled || voiceState === 'LISTENING'}
+          disabled={disabled || displayVoiceState === 'LISTENING'}
           aria-label="Chat message input"
           aria-describedby="chat-input-hint"
         />
