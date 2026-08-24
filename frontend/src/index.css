@@ -1,0 +1,80 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ─────────────────────────────────────────────
+   Design Tokens
+───────────────────────────────────────────── */
+:root {
+  /* Accent palette */
+  --accent:        #7C3AED;
+  --accent-dark:   #5B21B6;
+  --accent-light:  #A855F7;
+
+  /* Dark theme (default) */
+  --bg:            #0D0D14;
+  --surface:       #12121C;
+  --sidebar-bg:    rgba(18, 18, 30, 0.85);
+  --glass-bg:      rgba(255, 255, 255, 0.04);
+  --glass-border:  rgba(255, 255, 255, 0.08);
+
+  --text-primary:   #F0EEFF;
+  --text-secondary: #9B8FC4;
+  --text-muted:     #5E5577;
+
+  /* Misc */
+  --radius-lg: 18px;
+  --radius-md: 12px;
+  --shadow-glow: 0 0 40px rgba(124, 58, 237, 0.15);
+}
+
+/* Light theme */
+:root[data-theme="light"] {
+  --bg:            #F5F3FF;
+  --surface:       #FFFFFF;
+  --sidebar-bg:    rgba(255, 255, 255, 0.88);
+  --glass-bg:      rgba(0, 0, 0, 0.03);
+  --glass-border:  rgba(0, 0, 0, 0.08);
+
+  --text-primary:   #1A0A3D;
+  --text-secondary: #5B21B6;
+  --text-muted:     #9B8FC4;
+  --shadow-glow:    0 0 40px rgba(124, 58, 237, 0.08);
+}
+
+/* ─────────────────────────────────────────────
+   Reset & Base
+───────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: var(--bg);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  overflow: hidden;
+}
+
+/* Mesh gradient background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(ellipse 60% 50% at 15% 20%, rgba(124, 58, 237, 0.12) 0%, transparent 60%),
+    radial-gradient(ellipse 50% 60% at 85% 80%, rgba(168, 85, 247, 0.08) 0%, transparent 60%),
+    var(--bg);
+  pointer-events: none;
+}
+
+button { cursor: pointer; }
+p { margin: 0; }

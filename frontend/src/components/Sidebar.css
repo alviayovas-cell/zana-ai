@@ -1,0 +1,269 @@
+.sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--glass-border);
+  padding: 24px 16px;
+  gap: 20px;
+  backdrop-filter: blur(20px);
+}
+
+/* ── Logo ────────────────────────────────── */
+.sidebar-logo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px;
+}
+
+.logo-icon svg {
+  width: 38px;
+  height: 38px;
+  filter: drop-shadow(0 4px 12px rgba(124, 58, 237, 0.5));
+}
+
+.logo-name {
+  font-size: 1.25rem;
+  font-weight: 800;
+  margin: 0;
+  background: linear-gradient(135deg, var(--accent-light), #c084fc);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -0.3px;
+}
+
+.logo-tagline {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin: 1px 0 0;
+  font-weight: 400;
+}
+
+/* ── Phase badge ─────────────────────────── */
+.phase-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--accent-light);
+  background: rgba(124, 58, 237, 0.12);
+  border: 1px solid rgba(124, 58, 237, 0.25);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-weight: 500;
+  width: fit-content;
+}
+
+.phase-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-light);
+  animation: pulseDot 2s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(0.75); }
+}
+
+/* ── Spotify Card ─────────────────────────── */
+.spotify-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.spotify-card.connected {
+  border-color: rgba(29, 185, 84, 0.3);
+  background: rgba(29, 185, 84, 0.05);
+}
+
+.spotify-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spotify-icon-mini {
+  color: #1db954;
+  display: flex;
+  align-items: center;
+}
+
+.spotify-card-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.spotify-status-pill {
+  font-size: 0.65rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-muted);
+}
+
+.connected .spotify-status-pill {
+  background: rgba(29, 185, 84, 0.2);
+  color: #1db954;
+  font-weight: 600;
+}
+
+.spotify-user-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spotify-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.spotify-avatar-placeholder {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #1db954;
+  color: #000;
+  font-weight: 700;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.spotify-user-details {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.spotify-user-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.spotify-plan-tag {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.btn-spotify-sidebar-connect {
+  background: #1db954;
+  color: #000;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 9999px;
+  font-weight: 600;
+  font-size: 0.75rem;
+  cursor: pointer;
+  width: 100%;
+  transition: all 0.2s ease;
+}
+
+.btn-spotify-sidebar-connect:hover {
+  background: #1ed760;
+  transform: scale(1.02);
+}
+
+.tag-active {
+  background: rgba(29, 185, 84, 0.2) !important;
+  border-color: rgba(29, 185, 84, 0.4) !important;
+  color: #1db954 !important;
+  font-weight: 600;
+}
+
+
+/* ── Nav ─────────────────────────────────── */
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.2s;
+  position: relative;
+}
+
+.nav-item.active {
+  background: rgba(124, 58, 237, 0.18);
+  color: var(--accent-light);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+}
+
+.nav-item.disabled {
+  opacity: 0.4;
+  cursor: default;
+  color: var(--text-secondary);
+}
+
+.nav-icon { font-size: 1rem; }
+.nav-label { flex: 1; }
+
+.nav-phase-tag {
+  font-size: 0.6rem;
+  background: rgba(124, 58, 237, 0.2);
+  border: 1px solid rgba(124, 58, 237, 0.3);
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: var(--accent-light);
+  opacity: 0.8;
+}
+
+/* ── Footer ──────────────────────────────── */
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--glass-border);
+}
+
+.theme-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--glass-border);
+  background: var(--glass-bg);
+  color: var(--text-secondary);
+  font-size: 0.825rem;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+.theme-btn:hover {
+  background: rgba(124, 58, 237, 0.1);
+  border-color: rgba(124, 58, 237, 0.3);
+  color: var(--text-primary);
+}
