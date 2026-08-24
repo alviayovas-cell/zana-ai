@@ -1,9 +1,9 @@
 import io
-import os
 import time
 from abc import ABC, abstractmethod
 from typing import Optional
 import httpx
+import speech_recognition as sr
 
 from app.core.config import settings
 from app.core.logging_config import logger
@@ -13,7 +13,7 @@ class SpeechToTextProvider(ABC):
     """Abstract interface for Speech-to-Text providers."""
 
     @abstractmethod
-    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> str:
+    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
         """Transcribe raw audio bytes to text transcript."""
         pass
 
@@ -25,10 +25,11 @@ class GroqWhisperProvider(SpeechToTextProvider):
         self.api_key = api_key
         self.api_url = "https://api.groq.com/openai/v1/audio/transcriptions"
 
-    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> str:
+    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
         headers = {"Authorization": f"Bearer {self.api_key}"}
+        mime = "audio/wav" if filename.endswith(".wav") else "audio/webm"
         files = {
-            "file": (filename, audio_bytes, "audio/webm"),
+            "file": (filename, audio_bytes, mime),
         }
         data = {
             "model": "whisper-large-v3-turbo",
@@ -52,10 +53,11 @@ class OpenAIWhisperProvider(SpeechToTextProvider):
         self.api_key = api_key
         self.api_url = "https://api.openai.com/v1/audio/transcriptions"
 
-    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> str:
+    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
         headers = {"Authorization": f"Bearer {self.api_key}"}
+        mime = "audio/wav" if filename.endswith(".wav") else "audio/webm"
         files = {
-            "file": (filename, audio_bytes, "audio/webm"),
+            "file": (filename, audio_bytes, mime),
         }
         data = {
             "model": "whisper-1",
@@ -71,15 +73,39 @@ class OpenAIWhisperProvider(SpeechToTextProvider):
             return result.get("text", "").strip()
 
 
-class FallbackSTTProvider(SpeechToTextProvider):
+class GoogleSpeechRecognitionProvider(SpeechToTextProvider):
     """
-    Fallback provider when no cloud API keys are provided.
-    Logs warning and provides helpful diagnostic message.
+    Built-in free SpeechRecognition provider using Google Public STT.
+    Requires no API keys and works natively from backend server for WAV audio.
     """
 
-    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> str:
+    def __init__(self):
+        self.recognizer = sr.Recognizer()
+
+    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
+        try:
+            buf = io.BytesIO(audio_bytes)
+            with sr.AudioFile(buf) as source:
+                audio_data = self.recognizer.record(source)
+                text = self.recognizer.recognize_google(audio_data, language="en-US")
+                return text.strip() if text else ""
+        except sr.UnknownValueError:
+            logger.info("[STT:Google] No intelligible speech detected.")
+            return ""
+        except sr.RequestError as e:
+            logger.error(f"[STT:Google] Request error: {e}")
+            return ""
+        except Exception as e:
+            logger.error(f"[STT:Google] Error reading audio file: {e}")
+            return ""
+
+
+class FallbackSTTProvider(SpeechToTextProvider):
+    """Fallback provider."""
+
+    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
         logger.warning(
-            "[STT:Fallback] Audio received (%d bytes), but no GROQ_API_KEY or OPENAI_API_KEY configured.",
+            "[STT:Fallback] Audio received (%d bytes), no STT provider matched.",
             len(audio_bytes),
         )
         return ""
@@ -102,13 +128,13 @@ class STTService:
             logger.info("[STT] Using OpenAI Whisper Provider.")
             self._provider = OpenAIWhisperProvider(settings.OPENAI_API_KEY)
         else:
-            logger.info("[STT] Using Fallback STT Provider (Configure GROQ_API_KEY or OPENAI_API_KEY in .env for full cloud Whisper transcription).")
-            self._provider = FallbackSTTProvider()
+            logger.info("[STT] Using Free Google SpeechRecognition Provider (0 API keys required).")
+            self._provider = GoogleSpeechRecognitionProvider()
 
     def set_provider(self, provider: SpeechToTextProvider):
         self._provider = provider
 
-    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.webm") -> str:
+    async def transcribe(self, audio_bytes: bytes, filename: str = "audio.wav") -> str:
         if not self._provider:
             self._init_provider()
         

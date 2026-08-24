@@ -26,7 +26,7 @@ export const api = {
 
   transcribeAudio: async (audioBlob: Blob): Promise<{ transcript: string }> => {
     const formData = new FormData();
-    formData.append('file', audioBlob, 'voice_command.webm');
+    formData.append('file', audioBlob, 'voice_command.wav');
 
     const res = await fetch(`${API_BASE_URL}/api/voice/transcribe`, {
       method: 'POST',
