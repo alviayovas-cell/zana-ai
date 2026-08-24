@@ -24,6 +24,23 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
+  transcribeAudio: async (audioBlob: Blob): Promise<{ transcript: string }> => {
+    const formData = new FormData();
+    formData.append('file', audioBlob, 'voice_command.webm');
+
+    const res = await fetch(`${API_BASE_URL}/api/voice/transcribe`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(`Transcription error ${res.status}: ${errorText}`);
+    }
+
+    return res.json() as Promise<{ transcript: string }>;
+  },
+
   checkHealth: (): Promise<HealthResponse> =>
     apiFetch<HealthResponse>('/api/health'),
 
@@ -42,4 +59,3 @@ export const api = {
       body: JSON.stringify({ action, ...params }),
     }),
 };
-

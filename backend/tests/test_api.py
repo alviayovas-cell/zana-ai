@@ -1,3 +1,4 @@
+import io
 import pytest
 from httpx import AsyncClient, ASGITransport
 from app.main import app
@@ -60,6 +61,15 @@ async def test_chat_music_play_unauthenticated():
     assert data["track"] is not None
     assert "title" in data["track"]
 
+
+@pytest.mark.asyncio
+async def test_voice_transcribe_endpoint():
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        files = {"file": ("test.webm", b"fake-audio-bytes", "audio/webm")}
+        res = await ac.post("/api/voice/transcribe", files=files)
+    assert res.status_code == 200
+    data = res.json()
+    assert "transcript" in data
 
 
 @pytest.mark.asyncio

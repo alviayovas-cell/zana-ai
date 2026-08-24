@@ -35,6 +35,11 @@ class Settings(BaseSettings):
         "user-read-recently-played"
     )
 
+    # Speech-to-Text Configuration
+    OPENAI_API_KEY: str = ""
+    GROQ_API_KEY: str = ""
+    STT_PROVIDER: str = "auto"  # "auto", "groq", "openai", "fallback"
+
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod

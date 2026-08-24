@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.logging_config import setup_logging, logger
-from app.api.routes import health, chat, spotify, music
+from app.api.routes import health, chat, spotify, music, voice
 
 
 @asynccontextmanager
@@ -35,7 +35,7 @@ app.include_router(health.router, prefix="/api")
 app.include_router(chat.router, prefix="/api")
 app.include_router(spotify.router, prefix="/api")
 app.include_router(music.router, prefix="/api")
-
+app.include_router(voice.router, prefix="/api")
 
 
 @app.get("/")

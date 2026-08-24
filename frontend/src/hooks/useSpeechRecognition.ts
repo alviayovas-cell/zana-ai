@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { api } from '../services/api';
 
 export type VoiceState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'RESPONDING' | 'ERROR';
 
@@ -11,202 +12,152 @@ export function useSpeechRecognition({ onTranscript }: UseSpeechRecognitionProps
   const [interimText, setInterimText] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSupported, setIsSupported] = useState<boolean>(true);
-  const recognitionRef = useRef<any>(null);
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
   const onTranscriptRef = useRef(onTranscript);
   onTranscriptRef.current = onTranscript;
 
-  // Track whether the user intentionally wants to be listening.
-  // This ref survives across onend restarts.
-  const wantListeningRef = useRef(false);
-  // Prevent infinite restart loops
-  const restartCountRef = useRef(0);
-  const maxRestarts = 5;
-
+  // Check support for MediaRecorder & getUserMedia (supported on Brave, Chrome, Edge, Safari, Firefox)
   useEffect(() => {
-    const SpeechRecognition =
-      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-
-    if (!SpeechRecognition) {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+      console.warn('[VOICE] MediaRecorder / getUserMedia not supported in this browser.');
       setIsSupported(false);
-      console.warn('[VOICE] SpeechRecognition API not supported in this browser.');
-      return;
+    } else {
+      setIsSupported(true);
     }
+  }, []);
 
-    console.log('[VOICE] SpeechRecognition API detected — initializing.');
+  const cleanupStream = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop());
+      streamRef.current = null;
+    }
+  }, []);
 
-    const recognition = new SpeechRecognition();
-
-    // ── Key config ──────────────────────────────────────────
-    // continuous = true  → keeps listening until we call .stop()
-    // interimResults = true → gives live partial transcripts while speaking
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-    recognition.maxAlternatives = 1;
-
-    recognition.onstart = () => {
-      console.log('[VOICE] Recognition started — listening…');
-      restartCountRef.current = 0; // reset restart counter on successful start
-      setState('LISTENING');
-      setInterimText('');
-      setErrorMessage(null);
-    };
-
-    recognition.onresult = (event: any) => {
-      let interim = '';
-      let finalTranscript = '';
-
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const result = event.results[i];
-        const text = result[0].transcript;
-
-        if (result.isFinal) {
-          finalTranscript += text;
-        } else {
-          interim += text;
-        }
-      }
-
-      // Show interim text as live feedback
-      if (interim) {
-        setInterimText(interim);
-        console.log('[VOICE] Interim:', interim);
-      }
-
-      // When we get a final transcript, submit it
-      if (finalTranscript.trim()) {
-        const trimmed = finalTranscript.trim();
-        console.log('[VOICE] ✅ Final transcript:', trimmed);
-        setInterimText('');
-        setState('PROCESSING');
-        wantListeningRef.current = false;
-
-        // Stop recognition before submitting (prevents duplicate results)
-        try { recognition.stop(); } catch (_) { /* ignore */ }
-
-        onTranscriptRef.current(trimmed);
-      }
-    };
-
-    recognition.onerror = (event: any) => {
-      console.error('[VOICE] Recognition error:', event.error);
-
-      switch (event.error) {
-        case 'not-allowed':
-          setState('ERROR');
-          setErrorMessage('Microphone permission denied. Please allow microphone access in browser settings.');
-          wantListeningRef.current = false;
-          break;
-
-        case 'no-speech':
-          // Browser detected prolonged silence — not a real error.
-          // If user still wants to listen, onend will restart it.
-          console.log('[VOICE] No speech detected — will auto-restart if still listening.');
-          setErrorMessage(null);
-          break;
-
-        case 'aborted':
-          // User or system aborted — go idle silently
-          setState('IDLE');
-          setInterimText('');
-          break;
-
-        case 'audio-capture':
-          setState('ERROR');
-          setErrorMessage('No microphone found. Please connect a microphone and try again.');
-          wantListeningRef.current = false;
-          break;
-
-        case 'network':
-          setState('ERROR');
-          setErrorMessage('Network error during voice recognition. Check your connection.');
-          wantListeningRef.current = false;
-          break;
-
-        case 'service-not-allowed':
-          setState('ERROR');
-          setErrorMessage('Speech recognition service is not allowed. Please try a different browser.');
-          wantListeningRef.current = false;
-          break;
-
-        default:
-          setState('ERROR');
-          setErrorMessage(`Voice error: ${event.error}. Please try again.`);
-          wantListeningRef.current = false;
-          break;
-      }
-    };
-
-    recognition.onend = () => {
-      console.log('[VOICE] Recognition session ended. wantListening:', wantListeningRef.current);
-
-      if (wantListeningRef.current) {
-        // The user still wants to listen but the browser ended the session
-        // (e.g. due to 'no-speech' timeout). Restart safely.
-        restartCountRef.current += 1;
-
-        if (restartCountRef.current <= maxRestarts) {
-          console.log(`[VOICE] Auto-restarting (${restartCountRef.current}/${maxRestarts})…`);
-          try {
-            recognition.start();
-          } catch (e: any) {
-            console.warn('[VOICE] Restart failed:', e.message);
-            setState('IDLE');
-            setInterimText('');
-            wantListeningRef.current = false;
-          }
-          return; // Don't change state — onstart will keep LISTENING
-        } else {
-          console.warn('[VOICE] Max restarts reached. Stopping.');
-          setErrorMessage('Voice session timed out. Click the mic to try again.');
-          wantListeningRef.current = false;
-        }
-      }
-
-      // Fall through: return to appropriate state
-      setState((prev) => {
-        if (prev === 'PROCESSING') return prev; // keep processing state
-        return 'IDLE';
-      });
-      setInterimText('');
-    };
-
-    recognitionRef.current = recognition;
-
-    return () => {
-      wantListeningRef.current = false;
-      try { recognition.abort(); } catch (_) { /* ignore */ }
-    };
-  }, []); // Empty deps — create recognition once
-
-  const startListening = useCallback(() => {
+  const startListening = useCallback(async () => {
     if (!isSupported) {
-      setErrorMessage('Voice input is not supported in this browser.');
+      setErrorMessage('Audio recording is not supported in this browser.');
       return;
     }
+
     setErrorMessage(null);
     setInterimText('');
-    restartCountRef.current = 0;
-    wantListeningRef.current = true;
+    audioChunksRef.current = [];
 
     try {
-      recognitionRef.current?.start();
-      console.log('[VOICE] Start requested by user.');
-    } catch (e: any) {
-      console.warn('[VOICE] Could not start recognition:', e.message);
-      wantListeningRef.current = false;
+      console.log('[VOICE] Requesting microphone access...');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      streamRef.current = stream;
+
+      // Determine best supported mime type
+      let mimeType = 'audio/webm';
+      if (!MediaRecorder.isTypeSupported('audio/webm')) {
+        if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          mimeType = 'audio/mp4';
+        } else if (MediaRecorder.isTypeSupported('audio/ogg')) {
+          mimeType = 'audio/ogg';
+        } else {
+          mimeType = '';
+        }
+      }
+
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.onstart = () => {
+        console.log('[VOICE] 🔴 Audio recording started. Listening...');
+        setState('LISTENING');
+      };
+
+      recorder.onstop = async () => {
+        console.log('[VOICE] ⏹️ Recording stopped. Processing audio chunks...');
+        cleanupStream();
+
+        const chunks = audioChunksRef.current;
+        if (chunks.length === 0) {
+          console.warn('[VOICE] No audio data recorded.');
+          setState('IDLE');
+          return;
+        }
+
+        const audioBlob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        console.log(`[VOICE] Recorded audio blob: ${audioBlob.size} bytes (${audioBlob.type})`);
+
+        if (audioBlob.size < 1000) {
+          console.warn('[VOICE] Audio too short / empty.');
+          setErrorMessage('No speech detected. Please click the mic and speak your command.');
+          setState('IDLE');
+          return;
+        }
+
+        setState('PROCESSING');
+
+        try {
+          console.log('[VOICE] Sending audio to backend transcription API...');
+          const resp = await api.transcribeAudio(audioBlob);
+          const transcript = resp.transcript?.trim() || '';
+
+          if (transcript) {
+            console.log(`[VOICE] ✅ Received transcript: "${transcript}"`);
+            onTranscriptRef.current(transcript);
+          } else {
+            console.log('[VOICE] Empty transcript returned from STT service.');
+            setErrorMessage('No speech recognized. Try speaking closer to your microphone.');
+            setState('IDLE');
+          }
+        } catch (err: any) {
+          console.error('[VOICE] Transcription API error:', err);
+          setErrorMessage(err.message || 'Could not transcribe voice audio.');
+          setState('ERROR');
+        }
+      };
+
+      recorder.onerror = (e: any) => {
+        console.error('[VOICE] MediaRecorder error:', e);
+        setErrorMessage('Recording error occurred.');
+        setState('ERROR');
+        cleanupStream();
+      };
+
+      recorder.start(250); // Collect slice every 250ms
+    } catch (err: any) {
+      console.error('[VOICE] Failed to access microphone:', err);
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setErrorMessage('Microphone permission denied. Please allow microphone access in Brave/browser settings.');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setErrorMessage('No microphone device found on your computer.');
+      } else {
+        setErrorMessage(`Microphone error: ${err.message || err.name}`);
+      }
+      setState('ERROR');
+      cleanupStream();
     }
-  }, [isSupported]);
+  }, [isSupported, cleanupStream]);
 
   const stopListening = useCallback(() => {
-    console.log('[VOICE] Stop requested by user.');
-    wantListeningRef.current = false;
-    try {
-      recognitionRef.current?.stop();
-    } catch (_) { /* ignore */ }
-    setState('IDLE');
-    setInterimText('');
-  }, []);
+    console.log('[VOICE] Stop recording requested.');
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    } else {
+      cleanupStream();
+      setState('IDLE');
+    }
+  }, [cleanupStream]);
 
   const resetState = useCallback(() => {
     setState('IDLE');
