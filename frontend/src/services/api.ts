@@ -1,4 +1,4 @@
-import type { ChatRequest, ChatResponse, HealthResponse } from '../types/chat';
+import type { ChatRequest, ChatResponse, HealthResponse, BrainStatusResponse } from '../types/chat';
 import type { SpotifyStatusResponse, SpotifyPlaybackState } from '../types/spotify';
 
 const API_BASE_URL = '';
@@ -40,6 +40,15 @@ export const api = {
 
     return res.json() as Promise<{ transcript: string }>;
   },
+
+  getBrainStatus: (): Promise<BrainStatusResponse> =>
+    apiFetch<BrainStatusResponse>('/api/brain/status'),
+
+  testBrain: (message: string, session_id?: string): Promise<ChatResponse> =>
+    apiFetch<ChatResponse>('/api/brain/test', {
+      method: 'POST',
+      body: JSON.stringify({ message, session_id }),
+    }),
 
   checkHealth: (): Promise<HealthResponse> =>
     apiFetch<HealthResponse>('/api/health'),

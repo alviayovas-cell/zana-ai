@@ -267,3 +267,19 @@
   border-color: rgba(124, 58, 237, 0.3);
   color: var(--text-primary);
 }
+
+/* TTS sidebar button */
+.tts-sidebar-btn {
+  margin-bottom: 6px;
+  color: var(--text-muted);
+}
+
+.tts-sidebar-btn.tts-sidebar-on {
+  color: #a78bfa;
+  border-color: rgba(167, 139, 250, 0.35);
+  background: rgba(167, 139, 250, 0.08);
+}
+
+.tts-sidebar-btn.tts-sidebar-on:hover {
+  background: rgba(167, 139, 250, 0.15);
+}

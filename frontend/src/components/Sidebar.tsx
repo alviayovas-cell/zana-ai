@@ -8,13 +8,17 @@ interface Props {
   spotifyUser: SpotifyUser | null;
   isSpotifyConnected: boolean;
   onConnectSpotify: () => void;
+  activeTab: string;
+  onSelectTab: (tabId: string) => void;
+  ttsEnabled?: boolean;
+  onToggleTts?: () => void;
 }
 
 const NAV_ITEMS = [
-  { icon: '💬', label: 'Chat', active: true, phase: null },
-  { icon: '🎵', label: 'Spotify Player', active: true, phase: 'Active' },
-  { icon: '🎤', label: 'Voice Assistant', active: true, phase: 'Active' },
-  { icon: '🧠', label: 'AI Brain', active: false, phase: 'Phase 4' },
+  { id: 'chat', icon: '💬', label: 'Chat', active: true, phase: null },
+  { id: 'spotify', icon: '🎵', label: 'Spotify Player', active: true, phase: 'Active' },
+  { id: 'voice', icon: '🎤', label: 'Voice Assistant', active: true, phase: 'Active' },
+  { id: 'brain', icon: '🧠', label: 'AI Brain', active: true, phase: 'Active' },
 ];
 
 export const Sidebar: React.FC<Props> = ({
@@ -23,6 +27,10 @@ export const Sidebar: React.FC<Props> = ({
   spotifyUser,
   isSpotifyConnected,
   onConnectSpotify,
+  activeTab,
+  onSelectTab,
+  ttsEnabled = false,
+  onToggleTts,
 }) => {
   return (
     <aside className="sidebar" role="navigation" aria-label="Main navigation">
@@ -50,7 +58,7 @@ export const Sidebar: React.FC<Props> = ({
       {/* Phase badge */}
       <div className="phase-badge" role="status" aria-label="Current phase">
         <span className="phase-dot" aria-hidden="true" />
-        Phase 3 · Voice Assistant
+        Phase 5 · Memory &amp; TTS Active
       </div>
 
       {/* Spotify Connection Card */}
@@ -92,12 +100,15 @@ export const Sidebar: React.FC<Props> = ({
       <nav className="sidebar-nav">
         {NAV_ITEMS.map((item) => (
           <div
-            key={item.label}
-            className={`nav-item ${item.active ? 'active' : 'disabled'}`}
+            key={item.id}
+            id={`nav-item-${item.id}`}
+            className={`nav-item ${activeTab === item.id ? 'active' : ''}`}
             role="button"
-            tabIndex={item.active ? 0 : -1}
+            tabIndex={0}
+            onClick={() => onSelectTab(item.id)}
+            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && onSelectTab(item.id)}
             aria-label={item.label + (item.phase ? ` — ${item.phase}` : '')}
-            aria-current={item.active ? 'page' : undefined}
+            aria-current={activeTab === item.id ? 'page' : undefined}
           >
             <span className="nav-icon" aria-hidden="true">{item.icon}</span>
             <span className="nav-label">{item.label}</span>
@@ -112,6 +123,19 @@ export const Sidebar: React.FC<Props> = ({
 
       {/* Footer */}
       <div className="sidebar-footer">
+        {/* TTS toggle in sidebar */}
+        {onToggleTts && (
+          <button
+            id="sidebar-tts-toggle"
+            className={`theme-btn tts-sidebar-btn ${ttsEnabled ? 'tts-sidebar-on' : ''}`}
+            onClick={onToggleTts}
+            aria-pressed={ttsEnabled}
+            aria-label={ttsEnabled ? 'Voice output on — click to disable' : 'Voice output off — click to enable'}
+          >
+            <span aria-hidden="true">{ttsEnabled ? '🔊' : '🔇'}</span>
+            {ttsEnabled ? 'Voice Output On' : 'Voice Output Off'}
+          </button>
+        )}
         <button
           id="theme-toggle"
           className="theme-btn"

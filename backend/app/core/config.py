@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = ""
     STT_PROVIDER: str = "auto"  # "auto", "groq", "openai", "fallback"
 
+    # Phase 4: AI Brain — LLM Configuration
+    LLM_PROVIDER: str = "auto"  # "auto", "openai", "groq", "fallback"
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"  # Fast, capable, free-tier available
+
+    # Phase 5: MongoDB Persistence Configuration
+    MONGODB_URI: str = "mongodb://localhost:27017"
+    MONGODB_DB_NAME: str = "zana_db"
+
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod

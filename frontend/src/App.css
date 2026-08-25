@@ -112,6 +112,92 @@
 }
 
 
+/* ── TTS Toggle Button ────────────────────────────────────────────── */
+.tts-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: transparent;
+  white-space: nowrap;
+}
+
+.tts-toggle-btn.tts-on {
+  color: #a78bfa;
+  border-color: rgba(167, 139, 250, 0.4);
+  background: rgba(167, 139, 250, 0.1);
+}
+
+.tts-toggle-btn.tts-on:hover {
+  background: rgba(167, 139, 250, 0.2);
+  box-shadow: 0 0 12px rgba(167, 139, 250, 0.25);
+}
+
+.tts-toggle-btn.tts-off {
+  color: var(--text-muted);
+  border-color: var(--glass-border);
+  background: var(--glass-bg);
+}
+
+.tts-toggle-btn.tts-off:hover {
+  color: var(--text-primary);
+  border-color: rgba(167, 139, 250, 0.3);
+}
+
+.tts-stop-btn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tts-stop-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+
+.tts-btn-label {
+  font-size: 0.7rem;
+  letter-spacing: 0.03em;
+}
+
+/* Speaking waves animation */
+.tts-speaking-indicator {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+
+.tts-wave {
+  width: 3px;
+  border-radius: 99px;
+  background: #a78bfa;
+  animation: ttsWave 0.8s ease-in-out infinite alternate;
+}
+
+.tts-wave:nth-child(1) { height: 5px; animation-delay: 0s; }
+.tts-wave:nth-child(2) { height: 10px; animation-delay: 0.15s; }
+.tts-wave:nth-child(3) { height: 5px; animation-delay: 0.3s; }
+
+@keyframes ttsWave {
+  from { transform: scaleY(0.5); opacity: 0.6; }
+  to   { transform: scaleY(1.2); opacity: 1; }
+}
+
 /* ── Responsive ───────────────────────────── */
 @media (max-width: 640px) {
   .sidebar {

@@ -20,7 +20,8 @@ const WELCOME_MESSAGE: ChatMessage = {
 
 export function useChat(
   onTrackReceived?: (track: any) => void,
-  onActionReceived?: (action: string, value?: any) => void
+  onActionReceived?: (action: string, value?: any) => void,
+  onResponseReceived?: (text: string) => void
 ) {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [isLoading, setIsLoading] = useState(false);
@@ -69,6 +70,11 @@ export function useChat(
           track: response.track,
         };
         appendMessage(assistantMessage);
+
+        // Phase 5.3 — TTS: speak assistant response
+        if (onResponseReceived) {
+          onResponseReceived(response.message);
+        }
 
         // If backend returned a streaming track, notify player
         if (response.track && onTrackReceived) {

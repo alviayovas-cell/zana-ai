@@ -1,22 +1,49 @@
+"""
+orchestrator.py — Central message router for Zana assistant.
+
+Phase 1–3: Regex fast-path for deterministic commands.
+Phase 4:   AI Brain for all UNKNOWN/complex intents.
+
+Flow:
+    handle_message()
+        ↓
+    parse_baseline_intent()   ← fast regex (no LLM, no AI)
+        ↓ deterministic commands → handler → ChatResponse
+        ↓ UNKNOWN → ai_brain.process() → ChatResponse
+
+The AI Brain updates conversation context internally.
+The orchestrator also updates context for regex-handled commands
+so that follow-up requests ("next one", "pause") remain context-aware.
+"""
 import re
 from typing import Optional
+
 from app.schemas.chat import ChatResponse, SuggestionItem, TrackPayload
 from app.assistant.commands import CommandAction, ParsedCommand
 from app.services.spotify_service import spotify_service
 from app.services.free_music_service import free_music_service
 from app.core.logging_config import logger
 
+# Phase 4: AI Brain + context manager
+from app.assistant.brain.brain import ai_brain
+from app.assistant.brain.context_manager import context_manager
 
 
+from app.assistant.fast_router import fast_router
 
 class Orchestrator:
     """
     Central router for Zana assistant.
-    Dispatches parsed intents to appropriate tools, Spotify player, or fallback handlers.
+    Dispatches parsed intents to appropriate tools, Spotify player, or AI Brain.
     """
 
     def parse_baseline_intent(self, text: str) -> ParsedCommand:
-        # Music Playback: Play
+        # First evaluate Fast Command Router
+        fast_res = fast_router.route(text)
+        if fast_res.matched:
+            return fast_res.to_parsed_command()
+
+        # Music Playback: Play regex
         play_match = re.search(r"^(?:please\s+)?(?:play|listen to|put on)\s+(.+)", text, re.IGNORECASE)
         if play_match:
             song_query = play_match.group(1).strip()
@@ -26,58 +53,23 @@ class Orchestrator:
                 parameters={"query": song_query}
             )
 
-        normalized = text.lower().strip()
-
-
-        # Music Playback: Pause / Stop
-        if re.search(r"^(?:pause|stop music|pause song|stop playback|pause playback)\b", normalized):
-            return ParsedCommand(action=CommandAction.MUSIC_PAUSE, query=text)
-
-        # Music Playback: Resume / Unpause
-        if re.search(r"^(?:resume|unpause|continue playing|continue music)\b", normalized):
-            return ParsedCommand(action=CommandAction.MUSIC_RESUME, query=text)
-
-        # Music Playback: Next / Skip
-        if re.search(r"^(?:next|skip|next song|skip song|next track)\b", normalized):
-            return ParsedCommand(action=CommandAction.MUSIC_NEXT, query=text)
-
-        # Music Playback: Previous / Back
-        if re.search(r"^(?:prev|previous|previous song|last song|go back|previous track)\b", normalized):
-            return ParsedCommand(action=CommandAction.MUSIC_PREVIOUS, query=text)
-
-        # Music Volume
-        vol_match = re.search(r"(?:set\s+)?volume\s+(?:to\s+)?(\d{1,3})%?", normalized)
-        if vol_match:
-            vol_val = int(vol_match.group(1))
-            return ParsedCommand(
-                action=CommandAction.MUSIC_VOLUME,
-                query=text,
-                parameters={"volume": vol_val}
-            )
-
-        # Greetings
-        if re.search(r"^(hi|hello|hey|greetings|hola|namaste)\b", normalized):
-            return ParsedCommand(action=CommandAction.GREETING, query=text)
-
-        # Help
-        if re.search(r"^(help|what can you do|commands|features)", normalized):
-            return ParsedCommand(action=CommandAction.HELP, query=text)
-
-        # Status
-        if re.search(r"^(status|system status|ping|are you online)", normalized):
-            return ParsedCommand(action=CommandAction.STATUS, query=text)
-
-        # Catch-all
         return ParsedCommand(action=CommandAction.UNKNOWN, query=text)
 
     async def handle_message(self, message: str, session_id: Optional[str] = None) -> ChatResponse:
         logger.info(f"Processing message: '{message}' (session: {session_id})")
         command = self.parse_baseline_intent(message)
 
-        # Handle Greetings
+        # Convenience: session id for context updates
+        sid = session_id or "anonymous"
+
+        # ── Handle Greetings ─────────────────────────────────────────────────
         if command.action == CommandAction.GREETING:
+            ctx = context_manager.get_or_create(sid)
+            ctx.add_user_message(message)
+            reply = "Hello! I am Zana, your AI music assistant. How can I help you today?"
+            ctx.add_assistant_message(reply)
             return ChatResponse(
-                message="Hello! I am Zana, your AI music assistant. How can I help you today?",
+                message=reply,
                 session_id=session_id,
                 suggestions=[
                     SuggestionItem(label="Play Blinding Lights", action_type="music_play"),
@@ -86,16 +78,23 @@ class Orchestrator:
                 ]
             )
 
-        # Handle Help
+        # ── Handle Help ──────────────────────────────────────────────────────
         elif command.action == CommandAction.HELP:
+            ctx = context_manager.get_or_create(sid)
+            ctx.add_user_message(message)
+            reply = (
+                "🎵 **Zana AI Assistant Capabilities**\n\n"
+                "• **Music Playback**: Say `Play <song/artist>` (e.g. *Play Starboy* or *Play Coldplay*)\n"
+                "• **Controls**: Say `Pause`, `Resume`, `Next song`, `Previous song`\n"
+                "• **Volume**: Say `Set volume to 80` or `Volume 50`\n"
+                "• **Current track**: Ask *\"What's playing?\"* or *\"Who sings this?\"*\n"
+                "• **Natural language**: Ask me anything — I'll understand!\n"
+                "• **Voice**: Click the 🎤 mic and speak your command!\n"
+                "• **Spotify Sync**: Connect your Spotify in the sidebar."
+            )
+            ctx.add_assistant_message(reply)
             return ChatResponse(
-                message=(
-                    "🎵 **Zana AI Assistant Capabilities**\n\n"
-                    "• **Music Playback**: Say `Play <song/artist>` (e.g. *Play Starboy* or *Play Coldplay*)\n"
-                    "• **Controls**: Say `Pause`, `Resume`, `Next song`, `Previous song`\n"
-                    "• **Volume**: Say `Set volume to 80` or `Volume 50`\n"
-                    "• **Spotify Sync**: Connect your Spotify in the sidebar to stream music seamlessly."
-                ),
+                message=reply,
                 session_id=session_id,
                 suggestions=[
                     SuggestionItem(label="Play Bohemian Rhapsody", action_type="music_play"),
@@ -104,7 +103,7 @@ class Orchestrator:
                 ]
             )
 
-        # Handle Status
+        # ── Handle Status ────────────────────────────────────────────────────
         elif command.action == CommandAction.STATUS:
             is_sp_auth = spotify_service.is_authenticated()
             sp_user = spotify_service.get_current_user() if is_sp_auth else None
@@ -115,6 +114,7 @@ class Orchestrator:
                     "**System Status**:\n"
                     "• Backend API: `Online` ✅\n"
                     f"• Spotify Service: `{user_text}`\n"
+                    "• AI Brain: `Active` 🧠\n"
                     "• Ready for playback commands!"
                 ),
                 session_id=session_id,
@@ -124,10 +124,14 @@ class Orchestrator:
                 ]
             )
 
-        # Handle Music Play
+        # ── Handle Music Play ────────────────────────────────────────────────
         elif command.action == CommandAction.MUSIC_SEARCH_PLAY:
             query = command.parameters.get("query", message)
-            logger.info(f"Searching and streaming audio for: '{query}'")
+            logger.info(f"[ORCH] Searching and streaming audio for: '{query}'")
+
+            # Update context
+            ctx = context_manager.get_or_create(sid)
+            ctx.add_user_message(message)
 
             track_info = free_music_service.search_and_extract(query)
             if track_info and track_info.get("audio_url"):
@@ -140,13 +144,21 @@ class Orchestrator:
                     duration=track_info.get("duration", 0),
                     webpage_url=track_info.get("webpage_url"),
                 )
+                # Update music context
+                ctx.update_music_context(
+                    query=query,
+                    track=payload.title,
+                    artist=payload.artist,
+                )
+                reply = f"🎶 Now streaming **{payload.title}** by **{payload.artist}** directly in your browser!"
+                ctx.add_assistant_message(reply)
                 return ChatResponse(
-                    message=f"🎶 Now streaming **{payload.title}** by **{payload.artist}** directly in your browser!",
+                    message=reply,
                     session_id=session_id,
                     track=payload,
                     suggestions=[
                         SuggestionItem(label="Pause music", action_type="music_pause"),
-                        SuggestionItem(label="Play Blinding Lights", action_type="music_play"),
+                        SuggestionItem(label="Next song", action_type="music_next"),
                         SuggestionItem(label="Set volume to 80", action_type="music_volume"),
                     ]
                 )
@@ -154,12 +166,16 @@ class Orchestrator:
                 # If free extraction failed, try Spotify fallback
                 if spotify_service.is_authenticated():
                     res = spotify_service.search_and_play(query)
+                    reply = res.get("message", "Triggered Spotify playback.")
+                    ctx.add_assistant_message(reply)
                     return ChatResponse(
-                        message=res.get("message", "Triggered Spotify playback."),
+                        message=reply,
                         session_id=session_id,
                     )
+                reply = f"⚠️ Could not find an audio stream for **\"{query}\"**. Please try another song title or artist!"
+                ctx.add_assistant_message(reply)
                 return ChatResponse(
-                    message=f"⚠️ Could not find an audio stream for **\"{query}\"**. Please try another song title or artist!",
+                    message=reply,
                     session_id=session_id,
                     suggestions=[
                         SuggestionItem(label="Play Starboy", action_type="music_play"),
@@ -167,11 +183,14 @@ class Orchestrator:
                     ]
                 )
 
-
-        # Handle Pause
+        # ── Handle Pause ─────────────────────────────────────────────────────
         elif command.action == CommandAction.MUSIC_PAUSE:
+            ctx = context_manager.get_or_create(sid)
+            ctx.add_user_message(message)
+            reply = "⏸️ Playback paused."
+            ctx.add_assistant_message(reply)
             return ChatResponse(
-                message="⏸️ Playback paused.",
+                message=reply,
                 session_id=session_id,
                 action="pause",
                 suggestions=[
@@ -180,10 +199,14 @@ class Orchestrator:
                 ]
             )
 
-        # Handle Resume
+        # ── Handle Resume ────────────────────────────────────────────────────
         elif command.action == CommandAction.MUSIC_RESUME:
+            ctx = context_manager.get_or_create(sid)
+            ctx.add_user_message(message)
+            reply = "▶️ Resuming music playback."
+            ctx.add_assistant_message(reply)
             return ChatResponse(
-                message="▶️ Resuming music playback.",
+                message=reply,
                 session_id=session_id,
                 action="resume",
                 suggestions=[
@@ -192,23 +215,42 @@ class Orchestrator:
                 ]
             )
 
-        # Handle Next / Skip
+        # ── Handle Next / Skip ───────────────────────────────────────────────
         elif command.action == CommandAction.MUSIC_NEXT:
-            # Pick a popular track to skip to
-            skip_query = "Starboy The Weeknd"
-            track_info = free_music_service.search_and_extract(skip_query)
-            if track_info:
+            ctx = context_manager.get_or_create(sid)
+            ctx.add_user_message(message)
+
+            # Context-aware next: use last played artist/query if available
+            next_query = None
+            if ctx.has_music_context():
+                if ctx.last_played_artist and ctx.last_played_artist != "Unknown Artist":
+                    next_query = ctx.last_played_artist
+                elif ctx.last_played_query:
+                    next_query = ctx.last_played_query
+            if not next_query:
+                next_query = "popular hits"
+
+            logger.info(f"[ORCH] Next track: searching for '{next_query}'")
+            track_info = free_music_service.search_and_extract(next_query)
+            if track_info and track_info.get("audio_url"):
                 payload = TrackPayload(
                     id=track_info.get("id"),
-                    title=track_info.get("title", skip_query),
-                    artist=track_info.get("artist", "The Weeknd"),
+                    title=track_info.get("title", next_query),
+                    artist=track_info.get("artist", "Unknown Artist"),
                     album_art=track_info.get("album_art"),
                     audio_url=track_info.get("audio_url"),
                     duration=track_info.get("duration", 0),
                     webpage_url=track_info.get("webpage_url"),
                 )
+                ctx.update_music_context(
+                    query=next_query,
+                    track=payload.title,
+                    artist=payload.artist,
+                )
+                reply = f"⏭️ Playing next: **{payload.title}** by **{payload.artist}**"
+                ctx.add_assistant_message(reply)
                 return ChatResponse(
-                    message=f"⏭️ Skipped to next track: **{payload.title}** by **{payload.artist}**",
+                    message=reply,
                     session_id=session_id,
                     track=payload,
                     action="play",
@@ -217,16 +259,22 @@ class Orchestrator:
                         SuggestionItem(label="Next song", action_type="music_next"),
                     ]
                 )
+            reply = "⏭️ Skipped track."
+            ctx.add_assistant_message(reply)
             return ChatResponse(
-                message="⏭️ Skipped track.",
+                message=reply,
                 session_id=session_id,
                 action="next",
             )
 
-        # Handle Previous
+        # ── Handle Previous ──────────────────────────────────────────────────
         elif command.action == CommandAction.MUSIC_PREVIOUS:
+            ctx = context_manager.get_or_create(sid)
+            ctx.add_user_message(message)
+            reply = "⏮️ Restarting track from the beginning."
+            ctx.add_assistant_message(reply)
             return ChatResponse(
-                message="⏮️ Restarting track from the beginning.",
+                message=reply,
                 session_id=session_id,
                 action="seek",
                 action_value=0,
@@ -236,7 +284,7 @@ class Orchestrator:
                 ]
             )
 
-        # Handle Volume
+        # ── Handle Volume ────────────────────────────────────────────────────
         elif command.action == CommandAction.MUSIC_VOLUME:
             vol = command.parameters.get("volume", 75)
             clamped = max(0, min(100, vol))
@@ -251,22 +299,60 @@ class Orchestrator:
                 ]
             )
 
+        # ── Handle Current Track ─────────────────────────────────────────────
+        elif command.action == CommandAction.MUSIC_CURRENT_TRACK:
+            ctx = context_manager.get_or_create(sid)
+            ctx.add_user_message(message)
 
-        # Fallback / Unknown
-        else:
+            if spotify_service.is_authenticated():
+                try:
+                    state = spotify_service.get_playback_state()
+                    track = state.get("track")
+                    if track and state.get("is_playing"):
+                        reply = f"🎵 Currently playing: **{track.get('name')}** by **{track.get('artists')}**"
+                        ctx.add_assistant_message(reply)
+                        return ChatResponse(
+                            message=reply,
+                            session_id=session_id,
+                            suggestions=[
+                                SuggestionItem(label="Pause", action_type="music_pause"),
+                                SuggestionItem(label="Next song", action_type="music_next"),
+                            ]
+                        )
+                except Exception:
+                    pass
+
+            if ctx.has_music_context():
+                track_name = ctx.last_played_track or ctx.last_played_query
+                artist_name = ctx.last_played_artist or ""
+                reply = f"🎵 Currently playing: **{track_name}**" + (f" by **{artist_name}**" if artist_name else "")
+                ctx.add_assistant_message(reply)
+                return ChatResponse(
+                    message=reply,
+                    session_id=session_id,
+                    suggestions=[
+                        SuggestionItem(label="Pause", action_type="music_pause"),
+                        SuggestionItem(label="Next song", action_type="music_next"),
+                    ]
+                )
+
+            reply = "🎵 Nothing is currently playing. Want me to play a song?"
+            ctx.add_assistant_message(reply)
             return ChatResponse(
-                message=(
-                    f"I received: \"{message}\".\n\n"
-                    "Try asking me to play a song! For example:\n"
-                    "• *\"Play Shape of You\"*\n"
-                    "• *\"Play synthwave music\"*\n"
-                    "• *\"Pause\"* or *\"Set volume to 75\"*"
-                ),
+                message=reply,
                 session_id=session_id,
                 suggestions=[
                     SuggestionItem(label="Play Blinding Lights", action_type="music_play"),
-                    SuggestionItem(label="What can you do?", action_type="help"),
+                    SuggestionItem(label="Play relaxing music", action_type="music_play"),
                 ]
+            )
+
+        # ── UNKNOWN → AI Brain ───────────────────────────────────────────────
+        else:
+            logger.info(f"[ORCH] UNKNOWN intent → delegating to AI Brain")
+            return await ai_brain.process(
+                message=message,
+                session_id=session_id,
             )
 
 

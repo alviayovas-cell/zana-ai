@@ -28,8 +28,12 @@ export interface ChatResponse {
   track?: TrackPayload | null;
   action?: string | null;
   action_value?: any;
+  intent?: string | null;
+  confidence?: number | null;
+  tool?: string | null;
+  arguments?: Record<string, any> | null;
+  execution_status?: string | null;
 }
-
 
 export interface ChatMessage {
   id: string;
@@ -39,8 +43,22 @@ export interface ChatMessage {
   suggestions?: SuggestionItem[] | null;
   status?: string;
   track?: TrackPayload | null;
+  intent?: string | null;
+  confidence?: number | null;
+  tool?: string | null;
+  arguments?: Record<string, any> | null;
+  execution_status?: string | null;
 }
 
+export interface BrainStatusResponse {
+  status: string;
+  architecture: string;
+  modules: Record<string, boolean>;
+  active_sessions: number;
+  llm_configured: boolean;
+  provider: string;
+  model: string;
+}
 
 export interface HealthResponse {
   status: string;

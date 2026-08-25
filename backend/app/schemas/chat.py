@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -42,6 +42,12 @@ class ChatResponse(BaseModel):
     track: Optional[TrackPayload] = None
     action: Optional[str] = None
     action_value: Optional[Any] = None
+    # Phase 4 AI Brain Telemetry
+    intent: Optional[str] = None
+    confidence: Optional[float] = None
+    tool: Optional[str] = None
+    arguments: Optional[Dict[str, Any]] = None
+    execution_status: Optional[str] = None
 
 
 
