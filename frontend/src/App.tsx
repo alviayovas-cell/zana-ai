@@ -4,10 +4,15 @@ import { ChatWindow } from './components/ChatWindow';
 import { ChatInput } from './components/ChatInput';
 import { PlayerBar } from './components/PlayerBar';
 import { AiBrainPanel } from './components/AiBrainPanel';
+import { ProfileModal } from './components/ProfileModal';
+import { RemindersModal } from './components/RemindersModal';
+import { PermissionModal } from './components/PermissionModal';
 import type { PlayerBarRef } from './components/PlayerBar';
 import { useChat } from './hooks/useChat';
 import { useSpotify } from './hooks/useSpotify';
 import { useSpeechSynthesis } from './hooks/useSpeechSynthesis';
+import { useWakeWord } from './hooks/useWakeWord';
+import { useReminders } from './hooks/useReminders';
 import type { TrackPayload } from './types/chat';
 import './App.css';
 
@@ -15,10 +20,22 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<string>('chat');
   const [isDark, setIsDark] = useState(true);
   const [currentTrack, setCurrentTrack] = useState<TrackPayload | null>(null);
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isRemindersOpen, setIsRemindersOpen] = useState(false);
+  const [permissionModal, setPermissionModal] = useState<{
+    isOpen: boolean;
+    toolName: string;
+    prompt: string;
+    onConfirm?: () => void;
+  }>({ isOpen: false, toolName: '', prompt: '' });
+
   const playerRef = useRef<PlayerBarRef>(null);
 
   // Phase 5.3 — Text-to-Speech
   const tts = useSpeechSynthesis();
+
+  // Phase 6A — Reminders
+  const { reminders, dueAlerts, createReminder, deleteReminder, dismissAlert } = useReminders();
 
   const handleTrackReceived = useCallback((track: TrackPayload) => {
     setCurrentTrack(track);
@@ -52,6 +69,16 @@ export default function App() {
     handleActionReceived,
     handleResponseReceived
   );
+
+  // Phase 6A — Wake Word ("Hey Zana")
+  const handleWakeWord = useCallback(() => {
+    console.log('[WAKE-WORD] Activated by "Hey Zana"');
+    if (tts.isEnabled) {
+      tts.speak("Yes, I'm listening!");
+    }
+  }, [tts]);
+
+  const wakeWord = useWakeWord({ onWakeWordDetected: handleWakeWord });
 
   const {
     isAuthenticated,
@@ -91,6 +118,9 @@ export default function App() {
         onSelectTab={setActiveTab}
         ttsEnabled={tts.isEnabled}
         onToggleTts={tts.toggleEnabled}
+        onOpenProfile={() => setIsProfileOpen(true)}
+        onOpenReminders={() => setIsRemindersOpen(true)}
+        wakeWordListening={wakeWord.isListening}
       />
 
       <main className="chat-area" id="chat-area" role="main" aria-label="Zana AI Application Area">
@@ -106,6 +136,18 @@ export default function App() {
             </div>
           </div>
           <div className="header-actions">
+            {/* Wake word indicator */}
+            {wakeWord.isSupported && (
+              <span
+                className={`connection-badge ${wakeWord.isListening ? 'wakeword-active' : ''}`}
+                style={{ cursor: 'pointer' }}
+                onClick={wakeWord.toggleEnabled}
+                title={wakeWord.isEnabled ? 'Wake Word "Hey Zana" active' : 'Wake Word disabled'}
+              >
+                <span className="conn-dot" style={{ background: wakeWord.isListening ? '#a78bfa' : '#64748b' }} />
+                {wakeWord.isEnabled ? 'Hey Zana: Active' : 'Hey Zana: Off'}
+              </span>
+            )}
             {/* TTS Toggle Button */}
             {tts.isSupported && (
               <button
@@ -147,6 +189,35 @@ export default function App() {
           </div>
         </header>
 
+        {/* Due Reminders Alert Toasts */}
+        {dueAlerts.length > 0 && (
+          <div style={{ position: 'absolute', top: '70px', right: '20px', zIndex: 900, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {dueAlerts.map((alert) => (
+              <div
+                key={alert.id}
+                style={{
+                  background: 'linear-gradient(135deg, #7c3aed, #4c1d95)',
+                  color: '#fff',
+                  padding: '12px 18px',
+                  borderRadius: '12px',
+                  boxShadow: '0 8px 24px rgba(124, 58, 237, 0.4)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                }}
+              >
+                <span>⏰ <strong>Reminder:</strong> {alert.message}</span>
+                <button
+                  style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontWeight: 'bold' }}
+                  onClick={() => dismissAlert(alert.id)}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* View Switcher */}
         {activeTab === 'brain' ? (
           <AiBrainPanel onSendMessage={sendMessage} />
@@ -173,6 +244,26 @@ export default function App() {
         onControl={handleControl}
         onConnect={loginSpotify}
         isConnected={true}
+      />
+
+      {/* Phase 6A Modals */}
+      <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
+      <RemindersModal
+        isOpen={isRemindersOpen}
+        onClose={() => setIsRemindersOpen(false)}
+        reminders={reminders}
+        onCreateReminder={createReminder}
+        onDeleteReminder={deleteReminder}
+      />
+      <PermissionModal
+        isOpen={permissionModal.isOpen}
+        toolName={permissionModal.toolName}
+        prompt={permissionModal.prompt}
+        onConfirm={() => {
+          if (permissionModal.onConfirm) permissionModal.onConfirm();
+          setPermissionModal({ isOpen: false, toolName: '', prompt: '' });
+        }}
+        onCancel={() => setPermissionModal({ isOpen: false, toolName: '', prompt: '' })}
       />
     </div>
   );

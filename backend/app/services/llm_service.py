@@ -175,6 +175,69 @@ class LLMService:
             logger.error(f"[LLM-SERVICE] Text generation error: {exc}")
             return None
 
+    async def generate_stream(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+    ):
+        """
+        Stream text token chunks asynchronously. Yields str chunks.
+        """
+        info = self.get_provider_info()
+        provider = info["provider"]
+
+        if provider == "fallback":
+            yield ""
+            return
+
+        if provider == "openai":
+            url = OPENAI_API_URL
+            api_key = settings.OPENAI_API_KEY
+            model = settings.OPENAI_MODEL
+        else:
+            url = GROQ_API_URL
+            api_key = settings.GROQ_API_KEY
+            model = settings.GROQ_MODEL
+
+        logger.info(f"[LLM-SERVICE] Streaming text completion via {provider} ({model})")
+
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": 250,
+            "stream": True,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                async with client.stream(
+                    "POST",
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json=payload,
+                ) as response:
+                    async for line in response.aiter_lines():
+                        if not line or not line.startswith("data: "):
+                            continue
+                        data_str = line[6:].strip()
+                        if data_str == "[DONE]":
+                            break
+                        try:
+                            chunk_json = json.loads(data_str)
+                            delta = chunk_json.get("choices", [{}])[0].get("delta", {})
+                            content = delta.get("content", "")
+                            if content:
+                                yield content
+                        except Exception:
+                            continue
+        except Exception as exc:
+            logger.error(f"[LLM-SERVICE] Stream exception: {exc}")
+            yield ""
+
     def _clean_and_parse_json(self, raw: str) -> Optional[Dict[str, Any]]:
         """Safely parse JSON from raw LLM output."""
         cleaned = re.sub(r"```(?:json)?\s*", "", raw).strip().rstrip("`").strip()

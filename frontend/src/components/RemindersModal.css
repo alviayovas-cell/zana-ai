@@ -1,0 +1,77 @@
+.reminders-modal {
+  max-width: 500px;
+}
+
+.reminder-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.time-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.time-select label {
+  font-size: 0.8rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.time-select input {
+  width: 80px;
+}
+
+.reminders-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.reminders-list h4 {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.no-reminders {
+  font-size: 0.825rem;
+  color: var(--text-muted, #94a3b8);
+  font-style: italic;
+}
+
+.reminder-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.1));
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.reminder-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.reminder-msg {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.reminder-time {
+  font-size: 0.725rem;
+  color: var(--text-muted, #94a3b8);
+}
+
+.btn-delete-reminder {
+  background: none;
+  border: none;
+  color: #f87171;
+  font-size: 1rem;
+  cursor: pointer;
+}
