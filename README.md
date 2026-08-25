@@ -294,3 +294,8 @@ The goal of Zana is to build a **modular personal AI assistant** that can unders
 
 > **Voice + AI Brain + Memory + Tools = Zana**
 
+## 📄 License
+
+Add the license you choose for the project here.
+License: MIT
+Copyright: © 2026 Alvia Yovas
