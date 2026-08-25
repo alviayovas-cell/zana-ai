@@ -5,9 +5,11 @@
   flex-direction: column;
   background: var(--sidebar-bg);
   border-right: 1px solid var(--glass-border);
-  padding: 24px 16px;
-  gap: 20px;
+  padding: 24px 16px 96px 16px; /* Space for bottom fixed PlayerBar (84px) */
+  gap: 16px;
   backdrop-filter: blur(20px);
+  overflow-y: auto;
+  box-sizing: border-box;
 }
 
 /* ── Logo ────────────────────────────────── */
