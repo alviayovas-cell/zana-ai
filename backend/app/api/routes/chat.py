@@ -1,5 +1,6 @@
 import json
 import asyncio
+import time
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from app.schemas.chat import ChatRequest, ChatResponse
@@ -17,11 +18,13 @@ async def chat(
     orch: Orchestrator = Depends(get_orchestrator),
 ):
     logger.info(f"Chat request received: '{request.message[:50]}...'")
+    started_at = time.perf_counter()
     try:
         response = await orch.handle_message(
             message=request.message,
             session_id=request.session_id,
         )
+        logger.info(f"[PERF] chat total_ms={(time.perf_counter() - started_at) * 1000:.1f}")
         return response
     except Exception as e:
         logger.error(f"Chat processing error: {e}", exc_info=True)

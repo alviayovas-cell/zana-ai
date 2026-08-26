@@ -6,6 +6,18 @@ function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+function getSessionId(): string {
+  try {
+    const existing = localStorage.getItem('zana_session_id');
+    if (existing) return existing;
+    const sessionId = generateId();
+    localStorage.setItem('zana_session_id', sessionId);
+    return sessionId;
+  } catch {
+    return generateId();
+  }
+}
+
 const WELCOME_MESSAGE: ChatMessage = {
   id: 'welcome',
   role: 'assistant',
@@ -26,7 +38,7 @@ export function useChat(
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const sessionIdRef = useRef<string>(generateId());
+  const sessionIdRef = useRef<string>(getSessionId());
 
 
   const appendMessage = useCallback((msg: ChatMessage) => {

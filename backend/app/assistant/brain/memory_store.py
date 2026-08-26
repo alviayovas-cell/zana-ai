@@ -140,7 +140,7 @@ class MemoryStore:
 
         # Persist to MongoDB if available
         if mongo_service.is_connected():
-            await mongo_service.save_memory(
+            mongo_service.save_memory_background(
                 session_id=session_id,
                 content=content,
                 category="user_preference",

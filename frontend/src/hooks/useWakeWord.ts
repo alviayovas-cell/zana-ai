@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 
-const WAKE_WORD_STORAGE_KEY = 'zana_wakeword_enabled';
+const WAKE_WORD_STORAGE_KEY = 'zana_wakeword_enabled_v2';
 
 interface UseWakeWordOptions {
   onWakeWordDetected?: () => void;
@@ -11,6 +11,7 @@ export interface UseWakeWordReturn {
   isEnabled: boolean;
   isSupported: boolean;
   toggleEnabled: () => void;
+  setEnabled: (enabled: boolean) => void;
 }
 
 export function useWakeWord({ onWakeWordDetected }: UseWakeWordOptions = {}): UseWakeWordReturn {
@@ -22,14 +23,18 @@ export function useWakeWord({ onWakeWordDetected }: UseWakeWordOptions = {}): Us
 
   const [isEnabled, setIsEnabled] = useState<boolean>(() => {
     try {
-      return localStorage.getItem(WAKE_WORD_STORAGE_KEY) !== 'false';
+      return localStorage.getItem(WAKE_WORD_STORAGE_KEY) === 'true';
     } catch {
-      return true;
+      return false;
     }
   });
 
   const [isListening, setIsListening] = useState(false);
   const recognitionRef = useRef<any>(null);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isEnabledRef = useRef(isEnabled);
+  const onWakeWordDetectedRef = useRef(onWakeWordDetected);
+  const startListeningRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     try {
@@ -38,7 +43,7 @@ export function useWakeWord({ onWakeWordDetected }: UseWakeWordOptions = {}): Us
   }, [isEnabled]);
 
   const startListening = useCallback(() => {
-    if (!isSupported || !isEnabled || recognitionRef.current) return;
+    if (!isSupported || !isEnabledRef.current || recognitionRef.current) return;
 
     try {
       const recognition = new SpeechRecognition();
@@ -50,10 +55,10 @@ export function useWakeWord({ onWakeWordDetected }: UseWakeWordOptions = {}): Us
       recognition.onend = () => {
         setIsListening(false);
         recognitionRef.current = null;
-        // Auto-restart continuous listening if enabled
-        if (isEnabled) {
-          setTimeout(() => {
-            startListening();
+        if (isEnabledRef.current) {
+          restartTimerRef.current = setTimeout(() => {
+            restartTimerRef.current = null;
+            startListeningRef.current();
           }, 1000);
         }
       };
@@ -63,8 +68,8 @@ export function useWakeWord({ onWakeWordDetected }: UseWakeWordOptions = {}): Us
           const transcript = event.results[i][0].transcript.toLowerCase().trim();
           if (transcript.includes('hey zana') || transcript.includes('hey zana') || transcript.includes('hi zana')) {
             console.log('[WAKE-WORD] Triggered: "Hey Zana"');
-            if (onWakeWordDetected) {
-              onWakeWordDetected();
+            if (onWakeWordDetectedRef.current) {
+              onWakeWordDetectedRef.current();
             }
             break;
           }
@@ -81,9 +86,16 @@ export function useWakeWord({ onWakeWordDetected }: UseWakeWordOptions = {}): Us
       console.warn('[WAKE-WORD] Start warning:', err);
       setIsListening(false);
     }
-  }, [isSupported, isEnabled, onWakeWordDetected]);
+  }, [isSupported, SpeechRecognition]);
 
   useEffect(() => {
+    isEnabledRef.current = isEnabled;
+    onWakeWordDetectedRef.current = onWakeWordDetected;
+    startListeningRef.current = startListening;
+  }, [isEnabled, onWakeWordDetected, startListening]);
+
+  useEffect(() => {
+    isEnabledRef.current = isEnabled;
     if (isEnabled && isSupported) {
       startListening();
     } else if (recognitionRef.current) {
@@ -95,6 +107,10 @@ export function useWakeWord({ onWakeWordDetected }: UseWakeWordOptions = {}): Us
     }
 
     return () => {
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
       if (recognitionRef.current) {
         try {
           recognitionRef.current.stop();
@@ -108,5 +124,9 @@ export function useWakeWord({ onWakeWordDetected }: UseWakeWordOptions = {}): Us
     setIsEnabled((prev) => !prev);
   }, []);
 
-  return { isListening, isEnabled, isSupported, toggleEnabled };
+  const setEnabled = useCallback((enabled: boolean) => {
+    setIsEnabled(enabled);
+  }, []);
+
+  return { isListening, isEnabled, isSupported, toggleEnabled, setEnabled };
 }

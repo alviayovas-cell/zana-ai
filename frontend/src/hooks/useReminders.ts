@@ -1,9 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api } from '../services/api';
 
 export interface Reminder {
-  id: str;
-  user_id: str;
+  id: string;
+  user_id: string;
   message: string;
   scheduled_at: number;
   status: string;

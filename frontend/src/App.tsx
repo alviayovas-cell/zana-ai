@@ -120,7 +120,6 @@ export default function App() {
         onToggleTts={tts.toggleEnabled}
         onOpenProfile={() => setIsProfileOpen(true)}
         onOpenReminders={() => setIsRemindersOpen(true)}
-        wakeWordListening={wakeWord.isListening}
       />
 
       <main className="chat-area" id="chat-area" role="main" aria-label="Zana AI Application Area">
@@ -247,7 +246,19 @@ export default function App() {
       />
 
       {/* Phase 6A Modals */}
-      <ProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
+      <ProfileModal
+        isOpen={isProfileOpen}
+        onClose={() => setIsProfileOpen(false)}
+        isDark={isDark}
+        onToggleTheme={toggleTheme}
+        ttsEnabled={tts.isEnabled}
+        onToggleTts={tts.toggleEnabled}
+        wakeWordEnabled={wakeWord.isEnabled}
+        onToggleWakeWord={wakeWord.setEnabled}
+        spotifyUser={user}
+        isSpotifyConnected={isAuthenticated}
+        onConnectSpotify={loginSpotify}
+      />
       <RemindersModal
         isOpen={isRemindersOpen}
         onClose={() => setIsRemindersOpen(false)}

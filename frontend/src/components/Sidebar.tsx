@@ -14,7 +14,6 @@ interface Props {
   onToggleTts?: () => void;
   onOpenProfile?: () => void;
   onOpenReminders?: () => void;
-  wakeWordListening?: boolean;
 }
 
 const NAV_ITEMS = [
@@ -36,7 +35,6 @@ export const Sidebar: React.FC<Props> = ({
   onToggleTts,
   onOpenProfile,
   onOpenReminders,
-  wakeWordListening = false,
 }) => {
   return (
     <aside className="sidebar" role="navigation" aria-label="Main navigation">
@@ -64,7 +62,9 @@ export const Sidebar: React.FC<Props> = ({
       {/* Phase badge */}
       <div className="phase-badge" role="status" aria-label="Current phase">
         <span className="phase-dot" aria-hidden="true" />
-        Phase 6A · Advanced Assistant Active
+        <span className="phase-badge-text">
+          Phase 6A · Advanced Assistant Active
+        </span>
       </div>
 
       {/* Spotify Connection Card */}

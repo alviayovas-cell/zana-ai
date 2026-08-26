@@ -12,6 +12,7 @@ Features:
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Dict, List, Optional
 from app.core.config import settings
@@ -151,6 +152,19 @@ class MongoService:
         except Exception as exc:
             logger.warning(f"[MEMORY] Error saving memory to MongoDB: {exc}")
             return None
+
+    def save_memory_background(
+        self,
+        session_id: str,
+        content: str,
+        category: str = "general",
+        key: Optional[str] = None,
+        value: Optional[str] = None,
+    ) -> None:
+        """Persist a memory without blocking the response that created it."""
+        if not self._is_connected or self._db is None:
+            return
+        asyncio.create_task(self.save_memory(session_id, content, category, key, value))
 
     async def get_memories(self, session_id: str) -> List[Dict[str, Any]]:
         """Retrieve all long-term memories for a session from MongoDB."""

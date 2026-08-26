@@ -65,6 +65,25 @@ class AiBrain:
         ctx: ConversationContext = context_manager.get_or_create(sid)
         ctx.add_user_message(message)
 
+        # Explicit "remember" requests bypass intent classification so they
+        # are persisted even when no LLM provider is configured.
+        normalized_message = message.strip()
+        if normalized_message.lower().startswith(("remember ", "remember that ")):
+            memory_content = normalized_message.split(" ", 1)[1]
+            if memory_content.lower().startswith("that "):
+                memory_content = memory_content[5:]
+            await memory_store.save_explicit_memory(sid, memory_content.strip())
+            reply = f"I’ll remember that {memory_content.strip()}."
+            ctx.add_assistant_message(reply)
+            return ChatResponse(
+                message=reply,
+                session_id=session_id,
+                intent="memory_save",
+                confidence=1.0,
+                tool="memory_save",
+                execution_status="success",
+            )
+
         # ── Step 2: Long-term memory retrieval ──────────────────────────────
         mem = memory_store.get_or_create(sid)
         memory_context = mem.to_context_string()
