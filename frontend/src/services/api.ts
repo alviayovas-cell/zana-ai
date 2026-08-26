@@ -1,7 +1,7 @@
 import type { ChatRequest, ChatResponse, HealthResponse, BrainStatusResponse } from '../types/chat';
 import type { SpotifyStatusResponse, SpotifyPlaybackState } from '../types/spotify';
 
-const API_BASE_URL = '';
+export const API_BASE_URL = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '');
 
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE_URL}${path}`, {

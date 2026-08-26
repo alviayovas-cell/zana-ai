@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { API_BASE_URL } from '../services/api';
 
 export interface Reminder {
   id: string;
@@ -14,7 +15,7 @@ export function useReminders(userId: string = 'default-user') {
 
   const fetchReminders = useCallback(async () => {
     try {
-      const res = await fetch(`http://localhost:8000/api/reminders?user_id=${userId}`);
+      const res = await fetch(`${API_BASE_URL}/api/reminders?user_id=${userId}`);
       if (res.ok) {
         const data = await res.json();
         setReminders(data.reminders || []);
@@ -24,7 +25,7 @@ export function useReminders(userId: string = 'default-user') {
 
   const checkDueReminders = useCallback(async () => {
     try {
-      const res = await fetch('http://localhost:8000/api/reminders/due');
+      const res = await fetch(`${API_BASE_URL}/api/reminders/due`);
       if (res.ok) {
         const data = await res.json();
         if (data.due && data.due.length > 0) {
@@ -37,7 +38,7 @@ export function useReminders(userId: string = 'default-user') {
   const createReminder = useCallback(
     async (message: string, delaySeconds: number) => {
       try {
-        const res = await fetch('http://localhost:8000/api/reminders', {
+        const res = await fetch(`${API_BASE_URL}/api/reminders`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ user_id: userId, message, delay_seconds: delaySeconds }),
@@ -55,7 +56,7 @@ export function useReminders(userId: string = 'default-user') {
   const deleteReminder = useCallback(
     async (reminderId: string) => {
       try {
-        const res = await fetch(`http://localhost:8000/api/reminders/${reminderId}?user_id=${userId}`, {
+        const res = await fetch(`${API_BASE_URL}/api/reminders/${reminderId}?user_id=${userId}`, {
           method: 'DELETE',
         });
         if (res.ok) {

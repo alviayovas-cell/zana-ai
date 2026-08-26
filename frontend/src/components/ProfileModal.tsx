@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { SpotifyUser } from '../types/spotify';
+import { API_BASE_URL } from '../services/api';
 import './ProfileModal.css';
 
 interface Props {
@@ -66,8 +67,8 @@ export const ProfileModal: React.FC<Props> = ({
     previousFocusRef.current = document.activeElement as HTMLElement | null;
     setSection('profile'); setErrorMessage(''); setStatusMessage(''); setIsLoading(true);
     Promise.all([
-      fetch(`http://localhost:8000/api/profile?user_id=${userId}`).then((res) => res.ok ? res.json() : null),
-      fetch(`http://localhost:8000/api/memory?session_id=${encodeURIComponent(getMemorySessionId())}`).then((res) => res.ok ? res.json() : null),
+      fetch(`${API_BASE_URL}/api/profile?user_id=${userId}`).then((res) => res.ok ? res.json() : null),
+      fetch(`${API_BASE_URL}/api/memory?session_id=${encodeURIComponent(getMemorySessionId())}`).then((res) => res.ok ? res.json() : null),
     ]).then(([profile, memoryData]) => {
       if (profile) {
         setDisplayName(profile.display_name || 'Music Enthusiast');
@@ -92,7 +93,7 @@ export const ProfileModal: React.FC<Props> = ({
     if (!trimmedName) { setErrorMessage('Please enter a display name.'); setSection('profile'); return; }
     setIsSaving(true); setErrorMessage('');
     try {
-      const response = await fetch('http://localhost:8000/api/profile', {
+      const response = await fetch(`${API_BASE_URL}/api/profile`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, display_name: trimmedName, preferred_language: language, timezone,
           tts_enabled: ttsEnabled, wake_word_enabled: wakeWordEnabled,
@@ -112,7 +113,7 @@ export const ProfileModal: React.FC<Props> = ({
     reader.readAsDataURL(file);
   };
   const removeAvatar = () => { setAvatarUrl(''); try { localStorage.removeItem(`zana_avatar_${userId}`); } catch {} setStatusMessage('Profile photo removed'); };
-  const clearMemory = async () => { try { const response = await fetch(`http://localhost:8000/api/memory?session_id=${encodeURIComponent(getMemorySessionId())}`, { method: 'DELETE' }); if (!response.ok) throw new Error(); setMemories([]); setStatusMessage('Memory cleared'); } catch { setErrorMessage('Unable to clear memory right now.'); } setConfirmAction(null); };
+  const clearMemory = async () => { try { const response = await fetch(`${API_BASE_URL}/api/memory?session_id=${encodeURIComponent(getMemorySessionId())}`, { method: 'DELETE' }); if (!response.ok) throw new Error(); setMemories([]); setStatusMessage('Memory cleared'); } catch { setErrorMessage('Unable to clear memory right now.'); } setConfirmAction(null); };
   const resetPreferences = () => { setDisplayName('Music Enthusiast'); setLanguage('en'); setTimezone('UTC'); setResponseStyle('balanced'); setMemoryEnabled(true); setToolExecution(true); setAutoplay(true); setConfirmAction(null); setStatusMessage('Defaults restored locally. Save to apply them.'); };
   const initials = displayName.trim().split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'M';
 
