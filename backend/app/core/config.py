@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     SPOTIFY_REDIRECT_URI: str = "http://127.0.0.1:8000/api/spotify/callback"
     SPOTIFY_FRONTEND_REDIRECT: str = "http://localhost:5173"
     SPOTIFY_SCOPES: str = (
+        "user-read-private "
+        "user-read-email "
         "user-read-playback-state "
         "user-modify-playback-state "
         "user-read-currently-playing "

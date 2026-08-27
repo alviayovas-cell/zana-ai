@@ -81,18 +81,18 @@ export const Sidebar: React.FC<Props> = ({
           </span>
         </div>
 
-        {isSpotifyConnected && spotifyUser ? (
+        {isSpotifyConnected ? (
           <div className="spotify-user-info">
-            {spotifyUser.images?.[0]?.url ? (
+            {spotifyUser?.images?.[0]?.url ? (
               <img src={spotifyUser.images[0].url} alt="" className="spotify-avatar" />
             ) : (
               <div className="spotify-avatar-placeholder">
-                {spotifyUser.display_name?.charAt(0).toUpperCase() || 'U'}
+                {spotifyUser?.display_name?.charAt(0).toUpperCase() || 'U'}
               </div>
             )}
             <div className="spotify-user-details">
-              <span className="spotify-user-name">{spotifyUser.display_name}</span>
-              <span className="spotify-plan-tag">{spotifyUser.product || 'Free'} plan</span>
+              <span className="spotify-user-name">{spotifyUser?.display_name || 'Connected'}</span>
+              <span className="spotify-plan-tag">{spotifyUser?.product || 'Free'} plan</span>
             </div>
           </div>
         ) : (
