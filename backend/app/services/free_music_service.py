@@ -1,72 +1,104 @@
-import yt_dlp
-from typing import Optional, Dict, Any
+import time
+from typing import Optional, Dict, Any, List
+
+import httpx
+
 from app.core.logging_config import logger
+
+
+AUDIUS_APP_NAME = "Zana"
+AUDIUS_BOOTSTRAP = "https://api.audius.co"
 
 
 class FreeMusicService:
     """
-    100% Free Music Streaming & Search Service using yt-dlp.
-    Extracts direct audio streams without requiring Spotify Premium or API keys.
+    100% Free Music Streaming & Search Service using the Audius public API.
+
+    Audius is a decentralised, free music platform. Its REST API needs no
+    API key and its stream endpoints serve full-length tracks with permissive
+    CORS headers, so audio can be played directly in the browser from any
+    server IP (unlike YouTube/yt-dlp, which blocks datacentre IPs).
     """
 
-    def __init__(self):
-        self.ydl_opts = {
-            "format": "bestaudio/best",
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
-            "extract_flat": False,
-            "default_search": "ytsearch1",
-            "socket_timeout": 10,
-        }
+    def __init__(self) -> None:
+        self._host: Optional[str] = None
+        self._host_fetched_at: float = 0.0
+        self._host_ttl: float = 1800.0  # refresh discovery host every 30 min
+
+    def _get_host(self) -> Optional[str]:
+        """Return a healthy Audius discovery node, cached for a while."""
+        now = time.time()
+        if self._host and (now - self._host_fetched_at) < self._host_ttl:
+            return self._host
+        try:
+            with httpx.Client(timeout=10.0) as client:
+                resp = client.get(AUDIUS_BOOTSTRAP)
+                resp.raise_for_status()
+                hosts: List[str] = resp.json().get("data", [])
+            if hosts:
+                self._host = hosts[0]
+                self._host_fetched_at = now
+                logger.info(f"[AUDIUS] Using discovery node: {self._host}")
+                return self._host
+            logger.error("[AUDIUS] Bootstrap returned no discovery nodes.")
+        except Exception as exc:
+            logger.error(f"[AUDIUS] Failed to fetch discovery nodes: {exc}")
+        return None
 
     def search_and_extract(self, query: str) -> Optional[Dict[str, Any]]:
-        """Search query on YouTube Music / YouTube and extract the streaming audio URL."""
-        search_term = f"ytsearch1:{query} audio"
+        """Search Audius for a track and return its direct streaming audio URL."""
+        host = self._get_host()
+        if not host:
+            return None
+
         try:
-            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
-                info = ydl.extract_info(search_term, download=False)
-                if not info:
-                    return None
+            with httpx.Client(timeout=15.0) as client:
+                resp = client.get(
+                    f"{host}/v1/tracks/search",
+                    params={"query": query, "app_name": AUDIUS_APP_NAME},
+                )
+            if resp.status_code != 200:
+                logger.error(f"[AUDIUS] Search error {resp.status_code}: {resp.text[:200]}")
+                return None
 
-                entries = info.get("entries")
-                entry = entries[0] if entries else info
+            tracks: List[Dict[str, Any]] = resp.json().get("data", []) or []
+            # Keep only tracks we can actually stream for free
+            playable = [
+                t for t in tracks
+                if t.get("id")
+                and not t.get("is_delete")
+                and not t.get("is_stream_gated")
+                and t.get("is_streamable", True)
+            ]
+            if not playable:
+                logger.info(f"[AUDIUS] No streamable track for '{query}'")
+                return None
 
-                # Extract best audio stream url
-                audio_url = entry.get("url")
-                if not audio_url and "formats" in entry:
-                    # Pick best audio-only format
-                    audio_formats = [
-                        f for f in entry["formats"]
-                        if f.get("acodec") != "none" and f.get("vcodec") == "none"
-                    ]
-                    if audio_formats:
-                        audio_url = audio_formats[-1].get("url")
-                    else:
-                        audio_url = entry["formats"][-1].get("url")
+            track = playable[0]
+            track_id = track["id"]
+            stream_url = f"{host}/v1/tracks/{track_id}/stream?app_name={AUDIUS_APP_NAME}"
 
-                title = entry.get("title", query)
-                uploader = entry.get("uploader") or entry.get("channel") or "Unknown Artist"
-                thumbnail = entry.get("thumbnail") or (entry.get("thumbnails", [{}])[-1].get("url"))
-                duration = entry.get("duration", 0)
-                video_id = entry.get("id")
+            artwork = track.get("artwork") or {}
+            album_art = (
+                artwork.get("480x480")
+                or artwork.get("150x150")
+                or artwork.get("1000x1000")
+                or None
+            )
+            user = track.get("user") or {}
+            permalink = track.get("permalink") or ""
 
-                # Clean up title (remove "(Official Audio)", etc. for clean UI display)
-                clean_title = title
-                for tag in ["(Official Audio)", "(Official Music Video)", "[Official Video]", "(Audio)", "[Audio]", "(Lyric Video)", "(Lyrics)"]:
-                    clean_title = clean_title.replace(tag, "").strip()
-
-                return {
-                    "id": video_id,
-                    "title": clean_title,
-                    "artist": uploader,
-                    "album_art": thumbnail,
-                    "audio_url": audio_url,
-                    "duration": duration,
-                    "webpage_url": entry.get("webpage_url", f"https://www.youtube.com/watch?v={video_id}"),
-                }
-        except Exception as e:
-            logger.error(f"FreeMusicService error searching '{query}': {e}")
+            return {
+                "id": str(track_id),
+                "title": track.get("title") or query,
+                "artist": user.get("name") or user.get("handle") or "Unknown Artist",
+                "album_art": album_art,
+                "audio_url": stream_url,
+                "duration": int(track.get("duration") or 0),
+                "webpage_url": f"https://audius.co{permalink}" if permalink else None,
+            }
+        except Exception as exc:
+            logger.error(f"[AUDIUS] search_and_extract error for '{query}': {exc}")
             return None
 
 
