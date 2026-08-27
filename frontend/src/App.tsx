@@ -19,6 +19,7 @@ import './App.css';
 export default function App() {
   const [activeTab, setActiveTab] = useState<string>('chat');
   const [isDark, setIsDark] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<TrackPayload | null>(null);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isRemindersOpen, setIsRemindersOpen] = useState(false);
@@ -108,6 +109,13 @@ export default function App() {
 
   return (
     <div className="app-shell" id="app-shell">
+      {sidebarOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setSidebarOpen(false)}
+          aria-hidden="true"
+        />
+      )}
       <Sidebar
         isDark={isDark}
         onToggleTheme={toggleTheme}
@@ -115,17 +123,39 @@ export default function App() {
         isSpotifyConnected={isAuthenticated}
         onConnectSpotify={loginSpotify}
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        onSelectTab={(tab) => {
+          setActiveTab(tab);
+          setSidebarOpen(false);
+        }}
         ttsEnabled={tts.isEnabled}
         onToggleTts={tts.toggleEnabled}
-        onOpenProfile={() => setIsProfileOpen(true)}
-        onOpenReminders={() => setIsRemindersOpen(true)}
+        onOpenProfile={() => {
+          setIsProfileOpen(true);
+          setSidebarOpen(false);
+        }}
+        onOpenReminders={() => {
+          setIsRemindersOpen(true);
+          setSidebarOpen(false);
+        }}
+        isOpen={sidebarOpen}
+        onClose={() => setSidebarOpen(false)}
       />
 
       <main className="chat-area" id="chat-area" role="main" aria-label="Zana AI Application Area">
         {/* Main Header */}
         <header className="chat-header" role="banner">
           <div className="chat-header-info">
+            <button
+              className="sidebar-toggle-btn"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open menu"
+            >
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <line x1="3" y1="6" x2="21" y2="6" />
+                <line x1="3" y1="12" x2="21" y2="12" />
+                <line x1="3" y1="18" x2="21" y2="18" />
+              </svg>
+            </button>
             <div className="header-status-dot" aria-hidden="true" />
             <div>
               <h2 className="header-title">Zana</h2>

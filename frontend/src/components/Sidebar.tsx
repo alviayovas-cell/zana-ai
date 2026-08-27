@@ -14,6 +14,8 @@ interface Props {
   onToggleTts?: () => void;
   onOpenProfile?: () => void;
   onOpenReminders?: () => void;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 const NAV_ITEMS = [
@@ -35,9 +37,23 @@ export const Sidebar: React.FC<Props> = ({
   onToggleTts,
   onOpenProfile,
   onOpenReminders,
+  isOpen = false,
+  onClose,
 }) => {
   return (
-    <aside className="sidebar" role="navigation" aria-label="Main navigation">
+    <aside
+      className={`sidebar ${isOpen ? 'sidebar-open' : ''}`}
+      role="navigation"
+      aria-label="Main navigation"
+    >
+      {onClose && (
+        <button className="sidebar-close-btn" onClick={onClose} aria-label="Close menu">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      )}
       {/* Logo */}
       <div className="sidebar-logo">
         <div className="logo-icon" aria-hidden="true">

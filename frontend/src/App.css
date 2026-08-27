@@ -1,8 +1,43 @@
 .app-shell {
   display: flex;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
+  max-width: 100%;
   overflow: hidden;
+}
+
+/* Hamburger toggle — hidden on desktop, shown on mobile */
+.sidebar-toggle-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.sidebar-toggle-btn:hover {
+  background: var(--glass-bg);
+}
+
+/* Backdrop behind the mobile drawer */
+.sidebar-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 190;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 /* ── Chat area ───────────────────────────── */
@@ -199,8 +234,62 @@
 }
 
 /* ── Responsive ───────────────────────────── */
-@media (max-width: 640px) {
-  .sidebar {
+
+/* Tablet / small screens: collapse verbose header badges */
+@media (max-width: 880px) {
+  .header-actions .connection-badge {
     display: none;
+  }
+  .tts-btn-label {
+    display: none;
+  }
+}
+
+/* Mobile: sidebar becomes a slide-in drawer */
+@media (max-width: 900px) {
+  .sidebar-toggle-btn {
+    display: flex;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+  }
+
+  .chat-header {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .chat-header-info {
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .header-title,
+  .header-subtitle {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 42vw;
+  }
+
+  .header-actions {
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .chat-area {
+    padding-bottom: 104px;
+  }
+}
+
+@media (max-width: 480px) {
+  .header-actions .tts-toggle-btn,
+  .header-actions .tts-stop-btn {
+    padding: 5px 8px;
+  }
+  .header-title {
+    font-size: 0.95rem;
   }
 }

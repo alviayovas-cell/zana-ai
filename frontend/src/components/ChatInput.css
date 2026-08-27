@@ -145,3 +145,18 @@
   padding: 1px 5px;
   font-size: 0.65rem;
 }
+
+/* ── Responsive ───────────────────────────── */
+@media (max-width: 900px) {
+  .chat-input-wrapper {
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  }
+
+  .chat-textarea {
+    font-size: 16px; /* prevents iOS zoom-on-focus */
+  }
+
+  .input-hint {
+    display: none;
+  }
+}

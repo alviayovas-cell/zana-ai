@@ -286,3 +286,29 @@
   color: #e2e8f0;
   white-space: pre-wrap;
 }
+
+/* ── Responsive ───────────────────────────── */
+@media (max-width: 900px) {
+  .brain-panel-container {
+    padding: 1rem 0.9rem 6rem;
+    gap: 1rem;
+  }
+
+  .brain-header {
+    padding: 1rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .brain-modules-grid,
+  .telemetry-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 480px) {
+  .brain-modules-grid,
+  .telemetry-grid {
+    grid-template-columns: 1fr;
+  }
+}

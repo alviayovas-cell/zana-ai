@@ -331,3 +331,60 @@
   accent-color: #1db954;
   cursor: pointer;
 }
+
+/* ── Responsive ───────────────────────────── */
+@media (max-width: 1024px) {
+  .player-track-info {
+    min-width: 0;
+    max-width: 260px;
+  }
+  .player-extra-controls {
+    min-width: 0;
+    gap: 0.75rem;
+  }
+  .player-engine-tag {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .player-bar {
+    height: auto;
+    min-height: 64px;
+    flex-wrap: wrap;
+    padding: 8px 12px 10px;
+    gap: 8px 10px;
+  }
+
+  .player-track-info {
+    flex: 1 1 55%;
+    max-width: none;
+    gap: 0.6rem;
+  }
+
+  .player-album-art,
+  .player-album-placeholder {
+    width: 42px;
+    height: 42px;
+  }
+
+  .player-controls-center {
+    flex: 0 0 auto;
+    max-width: none;
+    order: 2;
+  }
+
+  .player-buttons {
+    gap: 0.9rem;
+  }
+
+  .player-progress-bar-container {
+    order: 3;
+    flex-basis: 100%;
+    width: 100%;
+  }
+
+  .player-extra-controls {
+    display: none;
+  }
+}

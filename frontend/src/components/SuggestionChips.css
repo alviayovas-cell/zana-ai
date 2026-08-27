@@ -3,6 +3,7 @@
   flex-wrap: wrap;
   gap: 8px;
   padding: 8px 0 4px;
+  max-width: 100%;
 }
 
 .chip {
@@ -16,6 +17,9 @@
   cursor: pointer;
   transition: background 0.2s, border-color 0.2s, transform 0.15s;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .chip:hover:not(:disabled) {
