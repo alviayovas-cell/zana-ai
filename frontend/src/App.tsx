@@ -283,6 +283,13 @@ export default function App() {
         onToggleTheme={toggleTheme}
         ttsEnabled={tts.isEnabled}
         onToggleTts={tts.toggleEnabled}
+        voices={tts.voices}
+        selectedVoiceURI={tts.selectedVoiceURI}
+        onSelectVoice={tts.setSelectedVoiceURI}
+        ttsRate={tts.rate}
+        onSetTtsRate={tts.setRate}
+        hasSamantha={tts.hasSamantha}
+        resolvedVoice={tts.resolvedVoice}
         wakeWordEnabled={wakeWord.isEnabled}
         onToggleWakeWord={wakeWord.setEnabled}
         spotifyUser={user}

@@ -11,6 +11,13 @@ interface Props {
   onToggleTheme: () => void;
   ttsEnabled: boolean;
   onToggleTts: () => void;
+  voices?: SpeechSynthesisVoice[];
+  selectedVoiceURI?: string;
+  onSelectVoice?: (voiceURI: string) => void;
+  ttsRate?: number;
+  onSetTtsRate?: (rate: number) => void;
+  hasSamantha?: boolean;
+  resolvedVoice?: SpeechSynthesisVoice | null;
   wakeWordEnabled: boolean;
   onToggleWakeWord: (enabled: boolean) => void;
   spotifyUser: SpotifyUser | null;
@@ -27,7 +34,7 @@ function getMemorySessionId(): string {
 
 const sections: Array<{ id: Section; label: string; icon: string }> = [
   { id: 'profile', label: 'Profile', icon: '◉' },
-  { id: 'voice', label: 'Voice & AI', icon: '◌' },
+  { id: 'voice', label: 'Voice & Speech', icon: '◌' },
   { id: 'memory', label: 'Memory', icon: '✦' },
   { id: 'music', label: 'Music', icon: '♫' },
   { id: 'appearance', label: 'Appearance', icon: '◐' },
@@ -36,7 +43,9 @@ const sections: Array<{ id: Section; label: string; icon: string }> = [
 
 export const ProfileModal: React.FC<Props> = ({
   isOpen, onClose, userId = 'default-user', isDark, onToggleTheme,
-  ttsEnabled, onToggleTts, wakeWordEnabled, onToggleWakeWord,
+  ttsEnabled, onToggleTts, voices = [], selectedVoiceURI = '', onSelectVoice,
+  ttsRate = 1.0, onSetTtsRate, hasSamantha = false, resolvedVoice = null,
+  wakeWordEnabled, onToggleWakeWord,
   spotifyUser, isSpotifyConnected, onConnectSpotify,
 }) => {
   const [section, setSection] = useState<Section>('profile');
@@ -77,6 +86,12 @@ export const ProfileModal: React.FC<Props> = ({
         setMemoryEnabled(profile.assistant_preferences?.memory_enabled ?? true);
         setToolExecution(profile.assistant_preferences?.tool_execution ?? true);
         setAutoplay(profile.music_preferences?.autoplay ?? true);
+        if (profile.assistant_preferences?.selected_voice && onSelectVoice && !selectedVoiceURI) {
+          onSelectVoice(profile.assistant_preferences.selected_voice);
+        }
+        if (profile.assistant_preferences?.tts_rate && onSetTtsRate) {
+          onSetTtsRate(Number(profile.assistant_preferences.tts_rate));
+        }
       }
       if (memoryData) setMemories(memoryData.memories || []);
     }).catch(() => setErrorMessage('Unable to load profile settings.')).finally(() => setIsLoading(false));
@@ -97,7 +112,14 @@ export const ProfileModal: React.FC<Props> = ({
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, display_name: trimmedName, preferred_language: language, timezone,
           tts_enabled: ttsEnabled, wake_word_enabled: wakeWordEnabled,
-          music_preferences: { autoplay }, assistant_preferences: { response_style: responseStyle, memory_enabled: memoryEnabled, tool_execution: toolExecution } }),
+          music_preferences: { autoplay },
+          assistant_preferences: {
+            response_style: responseStyle,
+            memory_enabled: memoryEnabled,
+            tool_execution: toolExecution,
+            selected_voice: selectedVoiceURI,
+            tts_rate: ttsRate,
+          } }),
       });
       if (!response.ok) throw new Error('save failed');
       setDisplayName(trimmedName); setStatusMessage('Changes saved'); window.setTimeout(() => setStatusMessage(''), 2500);
@@ -124,7 +146,7 @@ export const ProfileModal: React.FC<Props> = ({
         <nav className="profile-nav" aria-label="Settings sections">{sections.map((item) => <button key={item.id} className={`profile-nav-item ${section === item.id ? 'active' : ''}`} onClick={() => setSection(item.id)} aria-current={section === item.id ? 'page' : undefined}><span aria-hidden="true">{item.icon}</span>{item.label}</button>)}<div className="profile-nav-note"><span>●</span> Preferences stay with this device</div></nav>
         <main className="profile-content">{isLoading ? <div className="profile-loading" role="status">Loading your settings...</div> : <>
           {section === 'profile' && <ProfileSection displayName={displayName} setDisplayName={setDisplayName} language={language} setLanguage={setLanguage} timezone={timezone} setTimezone={setTimezone} avatarUrl={avatarUrl} initials={initials} avatarInputRef={avatarInputRef} handleAvatar={handleAvatar} removeAvatar={removeAvatar} />}
-          {section === 'voice' && <VoiceSection ttsEnabled={ttsEnabled} onToggleTts={onToggleTts} wakeWordEnabled={wakeWordEnabled} onToggleWakeWord={onToggleWakeWord} responseStyle={responseStyle} setResponseStyle={setResponseStyle} memoryEnabled={memoryEnabled} setMemoryEnabled={setMemoryEnabled} toolExecution={toolExecution} setToolExecution={setToolExecution} />}
+          {section === 'voice' && <VoiceSection ttsEnabled={ttsEnabled} onToggleTts={onToggleTts} voices={voices} selectedVoiceURI={selectedVoiceURI} onSelectVoice={onSelectVoice} ttsRate={ttsRate} onSetTtsRate={onSetTtsRate} hasSamantha={hasSamantha} resolvedVoice={resolvedVoice} wakeWordEnabled={wakeWordEnabled} onToggleWakeWord={onToggleWakeWord} responseStyle={responseStyle} setResponseStyle={setResponseStyle} memoryEnabled={memoryEnabled} setMemoryEnabled={setMemoryEnabled} toolExecution={toolExecution} setToolExecution={setToolExecution} />}
           {section === 'memory' && <MemorySection memories={memories} memoryEnabled={memoryEnabled} setMemoryEnabled={setMemoryEnabled} onClear={() => setConfirmAction('memory')} />}
           {section === 'music' && <MusicSection isSpotifyConnected={isSpotifyConnected} spotifyUser={spotifyUser} onConnectSpotify={onConnectSpotify} autoplay={autoplay} setAutoplay={setAutoplay} />}
           {section === 'appearance' && <AppearanceSection isDark={isDark} onToggleTheme={onToggleTheme} />}
@@ -140,7 +162,145 @@ export const ProfileModal: React.FC<Props> = ({
 
 function Toggle({ checked, onChange, label, description }: { checked: boolean; onChange: (value: boolean) => void; label: string; description: string }) { return <label className="setting-row"><span><strong>{label}</strong><small>{description}</small></span><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} /><i aria-hidden="true" /></label>; }
 function ProfileSection({ displayName, setDisplayName, language, setLanguage, timezone, setTimezone, avatarUrl, initials, avatarInputRef, handleAvatar, removeAvatar }: any) { return <section className="settings-section"><SectionIntro eyebrow="Your profile" title="Make Zana yours" description="A few details help Zana feel more personal, without getting in your way." /><div className="profile-identity"><div className="profile-avatar">{avatarUrl ? <img src={avatarUrl} alt="Profile" /> : <span>{initials}</span>}</div><div><h3>{displayName}</h3><p>Personal AI user</p><button className="profile-link" onClick={() => avatarInputRef.current?.click()}>Change photo</button>{avatarUrl && <button className="profile-link muted" onClick={removeAvatar}>Remove</button>}<input ref={avatarInputRef} className="visually-hidden" type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={handleAvatar} /></div></div><div className="settings-grid"><Field label="Display name"><input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Your name" /></Field><Field label="Preferred language"><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="en">English (US)</option><option value="ta">Tamil</option><option value="hi">Hindi</option></select></Field><Field label="Timezone"><select value={timezone} onChange={(event) => setTimezone(event.target.value)}><option>UTC</option><option>Asia/Kolkata</option><option>America/New_York</option><option>Europe/London</option><option>Asia/Tokyo</option><option>Australia/Sydney</option></select></Field></div></section>; }
-function VoiceSection({ ttsEnabled, onToggleTts, wakeWordEnabled, onToggleWakeWord, responseStyle, setResponseStyle, memoryEnabled, setMemoryEnabled, toolExecution, setToolExecution }: any) { return <section className="settings-section"><SectionIntro eyebrow="Voice & AI" title="How Zana responds" description="Tune the conversation without exposing technical controls." /><div className="settings-group"><Toggle checked={ttsEnabled} onChange={() => onToggleTts()} label="Voice output" description="Let Zana read replies aloud." /><Toggle checked={wakeWordEnabled} onChange={onToggleWakeWord} label="Hey Zana wake word" description="Listen for the wake word when explicitly enabled." /><Toggle checked={memoryEnabled} onChange={setMemoryEnabled} label="Conversation memory" description="Allow Zana to remember useful preferences and context." /><Toggle checked={toolExecution} onChange={setToolExecution} label="Tool execution" description="Let Zana carry out supported music and assistant actions." /></div><div className="style-picker"><div><p className="section-kicker">Response style</p><h3>Choose your default tone</h3></div><div className="style-options">{['concise', 'balanced', 'detailed'].map((style) => <button key={style} className={responseStyle === style ? 'selected' : ''} onClick={() => setResponseStyle(style)}>{style[0].toUpperCase() + style.slice(1)}<small>{style === 'concise' ? 'Fast and focused' : style === 'balanced' ? 'Clear and natural' : 'More context'}</small></button>)}</div></div></section>; }
+function VoiceSection({
+  ttsEnabled,
+  onToggleTts,
+  voices = [],
+  selectedVoiceURI = '',
+  onSelectVoice,
+  ttsRate = 1.0,
+  onSetTtsRate,
+  hasSamantha = false,
+  resolvedVoice = null,
+  wakeWordEnabled,
+  onToggleWakeWord,
+  responseStyle,
+  setResponseStyle,
+  memoryEnabled,
+  setMemoryEnabled,
+  toolExecution,
+  setToolExecution,
+}: any) {
+  const isSamanthaSelected = selectedVoiceURI?.toLowerCase().includes('samantha');
+
+  return (
+    <section className="settings-section">
+      <SectionIntro
+        eyebrow="Voice & Speech"
+        title="How Zana responds"
+        description="Configure voice output, assistant personality, and speech preferences."
+      />
+      <div className="settings-group">
+        <Toggle
+          checked={ttsEnabled}
+          onChange={() => onToggleTts()}
+          label="Voice output"
+          description="Let Zana read replies aloud."
+        />
+        {ttsEnabled && (
+          <div style={{ padding: '14px 0', borderBottom: '1px solid var(--glass-border)', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <Field label="Assistant Voice">
+              <select
+                value={selectedVoiceURI || ''}
+                onChange={(event) => onSelectVoice && onSelectVoice(event.target.value)}
+                aria-label="Assistant Voice"
+              >
+                <option value="">Default (Auto - Best Natural Female Voice)</option>
+                <option value="samantha">
+                  Samantha (Natural Female{hasSamantha ? ' - Installed' : ' - Auto Fallback'})
+                </option>
+                {voices
+                  .filter((v: SpeechSynthesisVoice) => !v.name.toLowerCase().includes('samantha'))
+                  .map((v: SpeechSynthesisVoice) => (
+                    <option key={v.voiceURI || v.name} value={v.voiceURI || v.name}>
+                      {v.name} ({v.lang})
+                    </option>
+                  ))}
+              </select>
+            </Field>
+
+            {/* Active Voice Status Pill */}
+            <div
+              style={{
+                fontSize: '0.68rem',
+                color: 'var(--text-muted)',
+                lineHeight: 1.4,
+                padding: '7px 10px',
+                borderRadius: '7px',
+                background: 'rgba(255, 255, 255, 0.04)',
+                border: '1px solid var(--glass-border)',
+              }}
+            >
+              <strong style={{ color: 'var(--text-secondary)' }}>Active Voice: </strong>
+              {resolvedVoice ? `${resolvedVoice.name} (${resolvedVoice.lang})` : 'System Default'}
+              {isSamanthaSelected && !hasSamantha && (
+                <span style={{ display: 'block', color: 'var(--accent-light)', marginTop: '2px' }}>
+                  ✦ Samantha fallback active: Using best natural female voice available on this device.
+                </span>
+              )}
+            </div>
+
+            {onSetTtsRate && (
+              <Field label={`Speech Rate (${ttsRate.toFixed(1)}x)`}>
+                <input
+                  type="range"
+                  min="0.7"
+                  max="1.5"
+                  step="0.1"
+                  value={ttsRate}
+                  onChange={(event) => onSetTtsRate(parseFloat(event.target.value))}
+                  aria-label="Speech Rate"
+                />
+              </Field>
+            )}
+          </div>
+        )}
+        <Toggle
+          checked={wakeWordEnabled}
+          onChange={onToggleWakeWord}
+          label="Hey Zana wake word"
+          description="Listen for the wake word when explicitly enabled."
+        />
+        <Toggle
+          checked={memoryEnabled}
+          onChange={setMemoryEnabled}
+          label="Conversation memory"
+          description="Allow Zana to remember useful preferences and context."
+        />
+        <Toggle
+          checked={toolExecution}
+          onChange={setToolExecution}
+          label="Tool execution"
+          description="Let Zana carry out supported music and assistant actions."
+        />
+      </div>
+      <div className="style-picker">
+        <div>
+          <p className="section-kicker">Response style</p>
+          <h3>Choose your default tone</h3>
+        </div>
+        <div className="style-options">
+          {['concise', 'balanced', 'detailed'].map((style) => (
+            <button
+              key={style}
+              className={responseStyle === style ? 'selected' : ''}
+              onClick={() => setResponseStyle(style)}
+            >
+              {style[0].toUpperCase() + style.slice(1)}
+              <small>
+                {style === 'concise'
+                  ? 'Fast and focused'
+                  : style === 'balanced'
+                  ? 'Clear and natural'
+                  : 'More context'}
+              </small>
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
 function MemorySection({ memories, memoryEnabled, setMemoryEnabled, onClear }: { memories: MemoryItem[]; memoryEnabled: boolean; setMemoryEnabled: (value: boolean) => void; onClear: () => void }) { return <section className="settings-section"><SectionIntro eyebrow="Memory" title="A little context goes a long way" description="Review the real memories Zana has saved for this session." /><div className="memory-summary"><div><span className="memory-number">{memories.length}</span><small>saved memories</small></div><span className={`status-pill ${memoryEnabled ? 'on' : ''}`}>{memoryEnabled ? '● On' : '○ Off'}</span></div><Toggle checked={memoryEnabled} onChange={setMemoryEnabled} label="Memory" description="Allow Zana to remember useful preferences and context." /><div className="memory-list">{memories.length ? memories.slice(0, 5).map((memory) => <div className="memory-item" key={memory.id || memory.content}><span>•</span><p>{memory.content}</p></div>) : <div className="memory-empty"><span>✦</span><p>No saved memories yet.</p></div>}</div><button className="text-danger" onClick={onClear} disabled={!memories.length}>Clear memory</button></section>; }
 function MusicSection({ isSpotifyConnected, spotifyUser, onConnectSpotify, autoplay, setAutoplay }: any) { return <section className="settings-section"><SectionIntro eyebrow="Music" title="Keep the soundtrack close" description="Manage the connection Zana uses for playback." /><div className={`connection-panel ${isSpotifyConnected ? 'connected' : ''}`}><span className="spotify-mark">♫</span><div><h3>Spotify</h3><p>{isSpotifyConnected ? `Connected${spotifyUser?.display_name ? ` as ${spotifyUser.display_name}` : ''}` : 'Not connected'}</p></div><span className="connection-state">{isSpotifyConnected ? '● Connected' : '○ Offline'}</span></div>{!isSpotifyConnected && <button className="profile-primary full-width" onClick={onConnectSpotify}>Connect Spotify</button>}<div className="settings-group"><Toggle checked={autoplay} onChange={setAutoplay} label="Autoplay" description="Keep music moving after the current track ends." /></div></section>; }
 function AppearanceSection({ isDark, onToggleTheme }: { isDark: boolean; onToggleTheme: () => void }) { return <section className="settings-section"><SectionIntro eyebrow="Appearance" title="Set the atmosphere" description="Choose the look that feels right for your listening space." /><div className="theme-options"><button className={isDark ? 'selected' : ''} onClick={() => { if (!isDark) onToggleTheme(); }}>◐<strong>Dark</strong><small>Low light, focused</small></button><button className={!isDark ? 'selected' : ''} onClick={() => { if (isDark) onToggleTheme(); }}>☼<strong>Light</strong><small>Bright and open</small></button><button className="disabled-option" disabled>◌<strong>System</strong><small>Coming soon</small></button></div><div className="info-note">Animation follows your browser's reduced-motion preference where supported.</div></section>; }
