@@ -108,14 +108,62 @@ class ResponseGenerator:
         ):
             return self._error_response(tool_result, session_id, intent_result)
 
-        # ── music_search_play ────────────────────────────────────────────────
-        if intent == "music_search_play" and tool_result.success and tool_result.track_payload:
+        # ── music_play (YouTube Embedded Playback) ───────────────────────────
+        if (intent == "music_play" or tool_result.tool == "music_play") and tool_result.success and tool_result.track_payload:
+            artist_suffix = f" by **{tool_result.track_artist}**" if tool_result.track_artist else ""
+            reply_text = f"Playing **{tool_result.track_title}**{artist_suffix} from YouTube."
+            pl_dict = dict(tool_result.track_payload)
+            pl_dict["provider"] = pl_dict.get("provider", "youtube")
+            payload = TrackPayload(**pl_dict)
             return ChatResponse(
-                message=f"🎶 Now playing **{tool_result.track_title}** by **{tool_result.track_artist}**",
+                message=reply_text,
                 session_id=session_id,
-                track=TrackPayload(**tool_result.track_payload),
+                track=payload,
                 action="play",
-                suggestions=_music_playing_suggestions(),
+                action_value={"provider": payload.provider, "videoId": payload.video_id or payload.id},
+                suggestions=[
+                    SuggestionItem(label="Pause", action_type="music_pause"),
+                    SuggestionItem(label="Next song", action_type="music_next"),
+                    SuggestionItem(label="Open on YouTube", action_type="open_youtube", payload=payload.webpage_url),
+                ],
+                intent=intent,
+                confidence=intent_result.confidence,
+                tool=tool_result.tool,
+                arguments=intent_result.arguments,
+                execution_status="success",
+            )
+
+        # ── music_search / music_search_play / artist_search / open_spotify ─
+        if intent in ("music_search", "music_search_play", "artist_search", "album_search", "playlist_search", "open_spotify") and tool_result.success and tool_result.track_payload:
+            artist_suffix = f" by **{tool_result.track_artist}**" if tool_result.track_artist else ""
+            reply_text = f"I found **{tool_result.track_title}**{artist_suffix}. Open it in Spotify to listen."
+            # Clean dictionary for TrackPayload
+            pl_dict = {
+                "id": tool_result.track_payload.get("id"),
+                "title": tool_result.track_payload.get("title") or tool_result.track_title or "",
+                "artist": tool_result.track_payload.get("artist") or tool_result.track_artist or "Unknown Artist",
+                "album": tool_result.track_payload.get("album"),
+                "album_art": tool_result.track_payload.get("album_art"),
+                "audio_url": tool_result.track_payload.get("audio_url"),
+                "duration": tool_result.track_payload.get("duration"),
+                "duration_ms": tool_result.track_payload.get("duration_ms"),
+                "release_date": tool_result.track_payload.get("release_date"),
+                "release_year": tool_result.track_payload.get("release_year"),
+                "external_url": tool_result.track_payload.get("external_url"),
+                "uri": tool_result.track_payload.get("uri"),
+                "webpage_url": tool_result.track_payload.get("webpage_url"),
+                "ranking_score": tool_result.track_payload.get("ranking_score"),
+            }
+            return ChatResponse(
+                message=reply_text,
+                session_id=session_id,
+                track=TrackPayload(**pl_dict),
+                action=None,  # No direct playback
+                suggestions=[
+                    SuggestionItem(label="Open in Spotify", action_type="open_spotify", payload=pl_dict.get("external_url")),
+                    SuggestionItem(label=f"More by {tool_result.track_artist}", action_type="artist_search", payload=tool_result.track_artist),
+                    SuggestionItem(label="Search Tamil songs", action_type="music_search"),
+                ],
                 intent=intent,
                 confidence=intent_result.confidence,
                 tool=tool_result.tool,
@@ -126,10 +174,10 @@ class ResponseGenerator:
         # ── music_next ───────────────────────────────────────────────────────
         if intent == "music_next" and tool_result.success and tool_result.track_payload:
             return ChatResponse(
-                message=f"⏭️ Playing next: **{tool_result.track_title}** by **{tool_result.track_artist}**",
+                message=f"⏭️ Next track: **{tool_result.track_title}** by **{tool_result.track_artist}**. Open it in Spotify to listen.",
                 session_id=session_id,
                 track=TrackPayload(**tool_result.track_payload),
-                action="play",
+                action=None,
                 suggestions=_control_suggestions(),
                 intent=intent,
                 confidence=intent_result.confidence,

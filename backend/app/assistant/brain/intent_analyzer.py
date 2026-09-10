@@ -194,7 +194,12 @@ def _fast_context_check(
 SYSTEM_PROMPT = """You are Zana's intent classification engine. Analyze the user's message and return ONLY valid JSON.
 
 Available intents:
-- music_search_play: user wants to play a specific song, artist, album, genre, or mood
+- music_play: user wants to play a song/music video directly (defaults to YouTube playback, e.g. "play Pattuma", "play on YouTube", "listen to Believer")
+- music_search: user wants to find, search for songs, mood, genre, or topic (e.g. "search Tamil songs", "find songs by Rahman")
+- artist_search: user wants to find songs by a specific artist
+- album_search: user wants to find an album
+- playlist_search: user wants to find a playlist
+- open_spotify: user explicitly wants to open a song/artist in Spotify
 - music_pause: user wants to pause/stop music
 - music_resume: user wants to resume/continue music
 - music_next: user wants to skip to next track
@@ -207,12 +212,19 @@ Available intents:
 - unknown: cannot determine intent
 
 Rules:
-1. For music_search_play, extract the "query" argument (song title, artist, genre, mood).
-2. For music_volume, extract "volume" argument as integer 0-100.
-3. If the request is ambiguous AND there is no music context, set needs_clarification=true.
-4. For multi-step requests (e.g. "play X and lower volume"), use the "steps" array.
-5. Keep response_hint short and natural (max 15 words). This is Zana's voice.
-6. confidence should reflect how sure you are (0.0-1.0).
+1. For music_play, extract into "arguments":
+   - "query": full query string (e.g. "Pattuma by Sai Abhyankkar")
+   - "track": specific track title if identified (e.g. "Pattuma"), else null
+   - "artist": artist name if identified (e.g. "Sai Abhyankkar"), else null
+   - "provider": "youtube" (default) or "spotify" if explicitly mentioned
+   Set requires_tool=true, tool="music_play".
+2. For music_search, extract "query", "artist", "language", set requires_tool=true, tool="music_search".
+3. For artist_search, extract "artist" and set tool="artist_search".
+4. For album_search, extract "album" and "artist", set tool="album_search".
+5. For open_spotify, extract "query" and set tool="open_spotify".
+5. For music_volume, extract "volume" argument as integer 0-100.
+6. Keep response_hint short and natural (max 15 words).
+7. confidence should reflect certainty (0.0-1.0).
 
 Return ONLY this JSON structure, no other text:
 {
@@ -352,25 +364,98 @@ class IntentAnalyzer:
                 tool="music_current_track",
             )
 
-        # Generic play request
-        play_match = re.search(r"(play|listen to|put on)\s+(.+)", norm)
-        if play_match:
-            query = play_match.group(2).strip()
+        # Open in Spotify
+        open_match = re.search(r"open\s+(.+?)(?:\s+(?:on|in)\s+spotify)?$", norm)
+        if open_match:
+            q = open_match.group(1).strip()
             return IntentResult(
-                intent="music_search_play",
-                confidence=0.85,
+                intent="open_spotify",
+                confidence=0.9,
                 requires_tool=True,
-                tool="music_search_play",
-                arguments={"query": query},
+                tool="open_spotify",
+                arguments={"query": q},
+                response_hint=f"Opening {q} in Spotify.",
+            )
+
+        # Artist search: "find songs by X", "songs by X", "tracks by X"
+        artist_match = re.search(r"(?:find\s+(?:songs|tracks|music)\s+by|songs\s+by)\s+(.+)", norm)
+        if artist_match:
+            artist_q = artist_match.group(1).strip()
+            return IntentResult(
+                intent="artist_search",
+                confidence=0.9,
+                requires_tool=True,
+                tool="artist_search",
+                arguments={"artist": artist_q, "query": artist_q},
+                response_hint=f"Here are songs by {artist_q}.",
+            )
+
+        # Play requests (YouTube provider default)
+        play_match = re.search(r"(?:play|listen\s+to|put\s+on)\s+(.+)", norm)
+        if play_match:
+            raw_q = play_match.group(1).strip()
+            if re.search(r"\b(?:on|in)\s+spotify\b", raw_q):
+                clean_sp = re.sub(r"\b(?:on|in)\s+spotify\b", "", raw_q).strip()
+                return IntentResult(
+                    intent="open_spotify",
+                    confidence=0.92,
+                    requires_tool=True,
+                    tool="open_spotify",
+                    arguments={"query": clean_sp, "track": clean_sp, "provider": "spotify"},
+                    response_hint=f"Opening {clean_sp} in Spotify.",
+                )
+
+            clean_yt = re.sub(r"\b(?:on|in)\s+youtube\b", "", raw_q).strip()
+            by_match = re.search(r"(.+?)\s+by\s+(.+)", clean_yt)
+            track_name = by_match.group(1).strip() if by_match else clean_yt
+            artist_name = by_match.group(2).strip() if by_match else None
+            return IntentResult(
+                intent="music_play",
+                confidence=0.92,
+                requires_tool=True,
+                tool="music_play",
+                arguments={
+                    "query": clean_yt,
+                    "track": track_name,
+                    "artist": artist_name,
+                    "provider": "youtube",
+                },
+                response_hint=f"Playing {clean_yt} from YouTube.",
+            )
+
+        # Search requests (Spotify provider default)
+        search_match = re.search(r"(?:search(?:\s+for)?|find|look\s+up)\s+(.+)", norm)
+        if search_match:
+            query = search_match.group(1).strip()
+            by_match = re.search(r"(.+?)\s+by\s+(.+)", query)
+            track_name = by_match.group(1).strip() if by_match else query
+            artist_name = by_match.group(2).strip() if by_match else None
+            lang = "Tamil" if "tamil" in query else ("Hindi" if "hindi" in query else None)
+
+            return IntentResult(
+                intent="music_search",
+                confidence=0.88,
+                requires_tool=True,
+                tool="music_search",
+                arguments={
+                    "query": query,
+                    "track": track_name,
+                    "artist": artist_name,
+                    "language": lang,
+                    "version_preference": "original",
+                    "action": "search",
+                    "provider": "spotify",
+                },
+                response_hint=f"Searching for {query}.",
             )
 
         # Capabilities
-        if any(kw in norm for kw in ["what can you", "capabilities", "what do you do"]):
+        if any(kw in norm for kw in ["what can you", "capabilities", "what do you do", "help"]):
             return IntentResult(
                 intent="assistant_capabilities",
                 confidence=0.9,
                 requires_tool=False,
-                response_hint="I can play music, control playback, and chat with you!",
+                response_hint="I can discover music, search tracks on Spotify, and chat with you!",
             )
 
         # Fallback: treat as general conversation
@@ -379,7 +464,7 @@ class IntentAnalyzer:
             confidence=0.6,
             requires_tool=False,
             response_hint=(
-                "I can help you play music! Try saying 'Play a song' or 'What can you do?'"
+                "I can help you search and find music on Spotify! Try saying 'Find Pattuma' or 'Search songs by A R Rahman'."
             ),
         )
 

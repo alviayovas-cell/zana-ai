@@ -42,14 +42,22 @@ export default function App() {
     setCurrentTrack(track);
   }, []);
 
+  const handlePlayTrack = useCallback((track: TrackPayload) => {
+    setCurrentTrack(track);
+    if (playerRef.current) {
+      playerRef.current.play();
+    }
+  }, []);
+
   const handleActionReceived = useCallback((action: string, value?: any) => {
     if (!playerRef.current) return;
     if (action === 'pause') {
       playerRef.current.pause();
-    } else if (action === 'resume') {
+    } else if (action === 'resume' || action === 'play') {
       playerRef.current.play();
     } else if (action === 'volume') {
-      playerRef.current.setVolume(Number(value));
+      const volNum = typeof value === 'object' && value?.volume_percent ? value.volume_percent / 100 : Number(value) / 100;
+      playerRef.current.setVolume(volNum);
     } else if (action === 'seek') {
       playerRef.current.seek(Number(value));
     }
@@ -106,6 +114,19 @@ export default function App() {
       return next;
     });
   };
+
+  const handlePlayerControl = useCallback(
+    (action: string, params?: { query?: string; volume_percent?: number }) => {
+      if (action === 'next') {
+        sendMessage('Play next song');
+      } else if (action === 'previous') {
+        sendMessage('Play previous song');
+      } else {
+        handleControl(action, params);
+      }
+    },
+    [sendMessage, handleControl]
+  );
 
   return (
     <div className="app-shell" id="app-shell">
@@ -257,6 +278,8 @@ export default function App() {
               messages={messages}
               isLoading={isLoading}
               onSuggestion={handleSuggestion}
+              onPlayTrack={handlePlayTrack}
+              currentTrack={currentTrack}
             />
 
             {/* Input (Text + Voice) */}
@@ -270,9 +293,10 @@ export default function App() {
         ref={playerRef}
         playback={playback}
         activeTrack={currentTrack}
-        onControl={handleControl}
+        onControl={handlePlayerControl}
         onConnect={loginSpotify}
         isConnected={true}
+        isSpeaking={tts.isSpeaking}
       />
 
       {/* Phase 6A Modals */}

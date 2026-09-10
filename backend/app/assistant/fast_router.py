@@ -92,6 +92,31 @@ class FastCommandRouter:
         r"^(status|system\s+status|ping|are\s+you\s+online)\s*$",
         re.IGNORECASE,
     )
+    # Music Discovery & Provider-Aware Launcher Patterns
+    _OPEN_SPOTIFY_RE = re.compile(
+        r"^(?:please\s+)?(?:open|play)\s+(.+?)\s+(?:on|in)\s+spotify\s*$",
+        re.IGNORECASE,
+    )
+    _OPEN_SPOTIFY_BARE_RE = re.compile(
+        r"^(?:please\s+)?open\s+(.+?)(?:\s+(?:on|in)\s+spotify)?\s*$",
+        re.IGNORECASE,
+    )
+    _PLAY_YOUTUBE_EXPLICIT_RE = re.compile(
+        r"^(?:please\s+)?(?:play(?:\s+(?:this|it|song|track))?\s+(?:on|in)\s+youtube|watch\s+(?:on|in)\s+youtube)(?:\s+(.+))?\s*$",
+        re.IGNORECASE,
+    )
+    _FIND_ARTIST_RE = re.compile(
+        r"^(?:please\s+)?(?:find\s+(?:songs|tracks|music)\s+by|search\s+artist|songs\s+by)\s+(.+?)\s*$",
+        re.IGNORECASE,
+    )
+    _SEARCH_RE = re.compile(
+        r"^(?:please\s+)?(?:find|search(?:\s+for)?|look\s+up)\s+(.+?)\s*$",
+        re.IGNORECASE,
+    )
+    _PLAY_RE = re.compile(
+        r"^(?:please\s+)?(?:play|listen\s+to|put\s+on)\s+(.+?)\s*$",
+        re.IGNORECASE,
+    )
 
     def route(self, text: str) -> FastRouteResult:
         """
@@ -207,6 +232,117 @@ class FastCommandRouter:
                 confidence=0.99,
                 reason="Status match",
             )
+
+        # 10. Explicit Play on YouTube
+        yt_explicit_match = self._PLAY_YOUTUBE_EXPLICIT_RE.match(norm)
+        if yt_explicit_match:
+            yt_q = (yt_explicit_match.group(1) or "").strip()
+            params = {"provider": "youtube"}
+            if yt_q:
+                params["query"] = yt_q
+                by_match = re.search(r"(.+?)\s+by\s+(.+)", yt_q, re.IGNORECASE)
+                if by_match:
+                    params["track"] = by_match.group(1).strip()
+                    params["artist"] = by_match.group(2).strip()
+                else:
+                    params["track"] = yt_q
+            logger.info(f"[ROUTER] Input: {norm!r} | Matched: MUSIC_PLAY on YouTube ({yt_q!r}) | Confidence: 0.98 | Mode: FastDirect")
+            return FastRouteResult(
+                matched=True,
+                action=CommandAction.MUSIC_PLAY,
+                query=yt_q or norm,
+                parameters=params,
+                confidence=0.98,
+                reason=f"Direct play on YouTube match: {yt_q or 'current/explicit'}",
+            )
+
+        # 11. Open in Spotify
+        open_sp_match = self._OPEN_SPOTIFY_RE.match(norm) or self._OPEN_SPOTIFY_BARE_RE.match(norm)
+        if open_sp_match:
+            song_q = open_sp_match.group(1).strip()
+            logger.info(f"[ROUTER] Input: {norm!r} | Matched: OPEN_SPOTIFY ({song_q!r}) | Confidence: 0.98 | Mode: FastDirect")
+            return FastRouteResult(
+                matched=True,
+                action=CommandAction.OPEN_SPOTIFY,
+                query=song_q,
+                parameters={"query": song_q, "track": song_q, "provider": "spotify"},
+                confidence=0.98,
+                reason=f"Direct open Spotify match: {song_q}",
+            )
+
+        # 12. Find / Search Artist
+        artist_match = self._FIND_ARTIST_RE.match(norm)
+        if artist_match:
+            artist_q = artist_match.group(1).strip()
+            logger.info(f"[ROUTER] Input: {norm!r} | Matched: ARTIST_SEARCH ({artist_q!r}) | Confidence: 0.98 | Mode: FastDirect")
+            return FastRouteResult(
+                matched=True,
+                action=CommandAction.ARTIST_SEARCH,
+                query=artist_q,
+                parameters={"artist": artist_q, "query": artist_q},
+                confidence=0.98,
+                reason=f"Artist search match: {artist_q}",
+            )
+
+        # 13. Search / Find Song or Topic
+        search_match = self._SEARCH_RE.match(norm)
+        if search_match:
+            search_q = search_match.group(1).strip()
+            # If query says "tamil songs by X", extract artist if present
+            by_match = re.search(r"(.+?)\s+by\s+(.+)", search_q, re.IGNORECASE)
+            params = {"query": search_q}
+            if by_match:
+                params["track"] = by_match.group(1).strip()
+                params["artist"] = by_match.group(2).strip()
+            logger.info(f"[ROUTER] Input: {norm!r} | Matched: MUSIC_SEARCH ({search_q!r}) | Confidence: 0.98 | Mode: FastDirect")
+            return FastRouteResult(
+                matched=True,
+                action=CommandAction.MUSIC_SEARCH,
+                query=search_q,
+                parameters=params,
+                confidence=0.98,
+                reason=f"Music search match: {search_q}",
+            )
+
+        # 14. Play Song (YouTube provider default for in-page embedded playback)
+        play_match = self._PLAY_RE.match(norm)
+        if play_match:
+            play_q = play_match.group(1).strip()
+            # If query is ambiguous or mood-based (e.g. "play something relaxing"), delegate to AI Brain
+            if re.search(r"\b(something|anything|some)\b", play_q, re.IGNORECASE):
+                logger.info(f"[ROUTER] Input: {norm!r} | Ambiguous play query -> Delegating to AI Brain")
+            else:
+                # Check if user explicitly asked for Spotify in the play query
+                if re.search(r"\b(?:on|in)\s+spotify\b", play_q, re.IGNORECASE):
+                    clean_sp_q = re.sub(r"\b(?:on|in)\s+spotify\b", "", play_q, flags=re.IGNORECASE).strip()
+                    logger.info(f"[ROUTER] Input: {norm!r} | Matched: OPEN_SPOTIFY via play ({clean_sp_q!r})")
+                    return FastRouteResult(
+                        matched=True,
+                        action=CommandAction.OPEN_SPOTIFY,
+                        query=clean_sp_q,
+                        parameters={"query": clean_sp_q, "track": clean_sp_q, "provider": "spotify"},
+                        confidence=0.98,
+                        reason=f"Play on Spotify match: {clean_sp_q}",
+                    )
+
+                clean_play_q = re.sub(r"\b(?:on|in)\s+youtube\b", "", play_q, flags=re.IGNORECASE).strip()
+                by_match = re.search(r"(.+?)\s+by\s+(.+)", clean_play_q, re.IGNORECASE)
+                params = {"query": clean_play_q, "provider": "youtube"}
+                if by_match:
+                    params["track"] = by_match.group(1).strip()
+                    params["artist"] = by_match.group(2).strip()
+                else:
+                    params["track"] = clean_play_q
+
+                logger.info(f"[ROUTER] Input: {norm!r} | Matched: MUSIC_PLAY ({clean_play_q!r}) | Confidence: 0.98 | Mode: FastDirect")
+                return FastRouteResult(
+                    matched=True,
+                    action=CommandAction.MUSIC_PLAY,
+                    query=clean_play_q,
+                    parameters=params,
+                    confidence=0.98,
+                    reason=f"Music play match: {clean_play_q}",
+                )
 
         # Unmatched / Ambiguous / Complex -> Pass to AI Brain
         logger.info(f"[ROUTER] Input: {norm!r} | Not deterministic -> Delegating to AI Brain")

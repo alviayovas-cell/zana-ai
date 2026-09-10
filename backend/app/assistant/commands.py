@@ -10,6 +10,8 @@ class CommandAction(str, Enum):
     STATUS = "status"
     UNKNOWN = "unknown"
     MUSIC_SEARCH_PLAY = "music_search_play"
+    MUSIC_PLAY = "music_play"
+    YOUTUBE_PLAY = "youtube_play"
     MUSIC_PAUSE = "music_pause"
     MUSIC_RESUME = "music_resume"
     MUSIC_NEXT = "music_next"
@@ -22,6 +24,12 @@ class CommandAction(str, Enum):
     GENERAL_CONVERSATION = "general_conversation"
     ASSISTANT_CAPABILITIES = "assistant_capabilities"
     CLARIFICATION_NEEDED = "clarification_needed"
+
+    # Music Discovery & Spotify Launcher intents
+    MUSIC_SEARCH = "music_search"
+    ARTIST_SEARCH = "artist_search"
+    ALBUM_SEARCH = "album_search"
+    OPEN_SPOTIFY = "open_spotify"
 
 
 class ParsedCommand(BaseModel):

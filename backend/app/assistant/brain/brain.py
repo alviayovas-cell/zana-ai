@@ -137,7 +137,7 @@ class AiBrain:
             logger.info(f"[AI-BRAIN] Result: {result}")
 
             # ── Update music context on successful play ──────────────────────
-            if result.success and step.tool in ("music_search_play", "music_next"):
+            if result.success and step.tool in ("music_play", "music_search_play", "music_next"):
                 query = step.arguments.get("query", "")
                 ctx.update_music_context(
                     query=query,

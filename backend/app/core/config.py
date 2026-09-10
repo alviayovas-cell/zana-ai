@@ -27,13 +27,7 @@ class Settings(BaseSettings):
     SPOTIFY_SCOPES: str = (
         "user-read-private "
         "user-read-email "
-        "user-read-playback-state "
-        "user-modify-playback-state "
-        "user-read-currently-playing "
-        "streaming "
         "playlist-read-private "
-        "playlist-modify-public "
-        "playlist-modify-private "
         "user-read-recently-played"
     )
 
@@ -50,6 +44,9 @@ class Settings(BaseSettings):
     # Phase 5: MongoDB Persistence Configuration
     MONGODB_URI: str = "mongodb://localhost:27017"
     MONGODB_DB_NAME: str = "zana_db"
+
+    # YouTube Playback Provider Configuration
+    YOUTUBE_API_KEY: str = ""
 
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")

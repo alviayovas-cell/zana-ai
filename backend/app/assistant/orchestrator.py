@@ -124,17 +124,160 @@ class Orchestrator:
                 ]
             )
 
-        # ── Handle Music Play ────────────────────────────────────────────────
-        elif command.action == CommandAction.MUSIC_SEARCH_PLAY:
-            query = command.parameters.get("query", message)
-            logger.info(f"[ORCH] Searching and streaming audio for: '{query}'")
+        # ── Handle Music Play (YouTube Provider embedded playback) ───────────
+        elif command.action in (CommandAction.MUSIC_PLAY, CommandAction.YOUTUBE_PLAY):
+            query = command.parameters.get("query") or command.query or message
+            artist_hint = command.parameters.get("artist")
+            provider = command.parameters.get("provider", "youtube")
+            logger.info(f"[ORCH] Music playback on {provider}: '{query}' (artist={artist_hint!r})")
+
+            ctx = context_manager.get_or_create(sid)
+            ctx.add_user_message(message)
+            ctx.update_music_context(query=query, artist=artist_hint)
+
+            if command.parameters.get("context_play") or query.lower().strip() in ("this", "it", "current song", "current track", "play on youtube", "play this on youtube"):
+                if ctx.has_music_context() and ctx.last_played_track:
+                    query = f"{ctx.last_played_track} {ctx.last_played_artist or ''}".strip()
+                    artist_hint = ctx.last_played_artist or artist_hint
+
+            from app.services.youtube_service import youtube_service
+            yt_res = youtube_service.search_youtube(
+                query=query,
+                limit=10,
+                artist_hint=artist_hint,
+            )
+
+            if yt_res.get("success") and yt_res.get("best_match"):
+                best = yt_res["best_match"]
+                from app.services.mongo_service import mongo_service
+                mongo_service.save_music_search_background(
+                    session_id=sid,
+                    query=query,
+                    track_id=best.get("videoId"),
+                    title=best.get("title"),
+                    artist=best.get("artist"),
+                    album=best.get("channelTitle"),
+                    spotify_url=best.get("url"),
+                )
+
+                payload = TrackPayload(**best)
+                ctx.update_music_context(
+                    query=query,
+                    track=payload.title,
+                    artist=payload.artist,
+                )
+
+                artist_text = f" by **{payload.artist}**" if payload.artist else ""
+                reply = f"Playing **{payload.title}**{artist_text} from YouTube."
+                ctx.add_assistant_message(reply)
+
+                return ChatResponse(
+                    message=reply,
+                    session_id=session_id,
+                    track=payload,
+                    action="play",
+                    action_value={"provider": "youtube", "videoId": payload.video_id or payload.id},
+                    intent="music_play",
+                    confidence=0.98,
+                    tool="music_play",
+                    execution_status="success",
+                    suggestions=[
+                        SuggestionItem(label="Pause", action_type="music_pause"),
+                        SuggestionItem(label="Next song", action_type="music_next"),
+                        SuggestionItem(label="Open on YouTube", action_type="open_youtube", payload=payload.webpage_url),
+                    ]
+                )
+            else:
+                err_msg = yt_res.get("message") or f'Could not find "{query}" on YouTube.'
+                ctx.add_assistant_message(err_msg)
+                return ChatResponse(
+                    message=err_msg,
+                    session_id=session_id,
+                    intent="music_play",
+                    confidence=0.98,
+                    tool="music_play",
+                    execution_status="failed",
+                    suggestions=[
+                        SuggestionItem(label="Search on Spotify", action_type="music_search"),
+                        SuggestionItem(label="Try another song", action_type="music_play"),
+                    ]
+                )
+
+        # ── Handle Music Discovery / Search / Spotify Launcher ───────────────
+        elif command.action in (
+            CommandAction.MUSIC_SEARCH,
+            CommandAction.MUSIC_SEARCH_PLAY,
+            CommandAction.ARTIST_SEARCH,
+            CommandAction.OPEN_SPOTIFY,
+        ):
+            query = command.parameters.get("query") or command.query or message
+            artist_hint = command.parameters.get("artist")
+            track_hint = command.parameters.get("track")
+            logger.info(f"[ORCH] Music discovery for: '{query}' (artist={artist_hint!r})")
 
             # Update context
             ctx = context_manager.get_or_create(sid)
             ctx.add_user_message(message)
 
+            # Detect language hint (e.g. Tamil)
+            from app.services.multilingual_service import multilingual_service
+            lang_code = multilingual_service.detect_language(query)
+            lang_hint = "Tamil" if lang_code == "ta" else ("Hindi" if lang_code == "hi" else None)
+
+            # Search Spotify first with deterministic ranking & pagination
+            sp_res = spotify_service.search_spotify(
+                query=query,
+                item_type="track",
+                limit=10,
+                offset=0,
+                artist_hint=artist_hint,
+                language_hint=lang_hint,
+            )
+
+            best_track = sp_res.get("best_match")
+            if sp_res.get("success") and best_track:
+                # Save search history to MongoDB
+                from app.services.mongo_service import mongo_service
+                mongo_service.save_music_search_background(
+                    session_id=sid,
+                    query=query,
+                    track_id=best_track.get("id"),
+                    title=best_track.get("title"),
+                    artist=best_track.get("artist"),
+                    album=best_track.get("album"),
+                    spotify_url=best_track.get("external_url"),
+                )
+
+                payload = TrackPayload(**best_track)
+                ctx.update_music_context(
+                    query=query,
+                    track=payload.title,
+                    artist=payload.artist,
+                )
+
+                artist_text = f" by **{payload.artist}**" if payload.artist else ""
+                reply = f"I found **{payload.title}**{artist_text}. Open it in Spotify to listen."
+                ctx.add_assistant_message(reply)
+
+                return ChatResponse(
+                    message=reply,
+                    session_id=session_id,
+                    track=payload,
+                    action=None,  # Free mode: no fake playback
+                    intent="music_search",
+                    confidence=0.98,
+                    tool="music_search",
+                    execution_status="success",
+                    suggestions=[
+                        SuggestionItem(label="Open in Spotify", action_type="open_spotify", payload=payload.external_url),
+                        SuggestionItem(label=f"More by {payload.artist}", action_type="artist_search", payload=payload.artist),
+                        SuggestionItem(label="Search Tamil songs", action_type="music_search"),
+                    ]
+                )
+
+            # Fallback: Free music service if Spotify search returned no results
             track_info = free_music_service.search_and_extract(query)
-            if track_info and track_info.get("audio_url"):
+            if track_info:
                 payload = TrackPayload(
                     id=track_info.get("id"),
                     title=track_info.get("title", query),
@@ -144,44 +287,39 @@ class Orchestrator:
                     duration=track_info.get("duration", 0),
                     webpage_url=track_info.get("webpage_url"),
                 )
-                # Update music context
                 ctx.update_music_context(
                     query=query,
                     track=payload.title,
                     artist=payload.artist,
                 )
-                reply = f"🎶 Now streaming **{payload.title}** by **{payload.artist}** directly in your browser!"
+                reply = f"I found **{payload.title}** by **{payload.artist}**. Open it in Spotify to listen."
                 ctx.add_assistant_message(reply)
                 return ChatResponse(
                     message=reply,
                     session_id=session_id,
                     track=payload,
+                    action=None,
+                    intent="music_search",
+                    confidence=0.9,
+                    tool="music_search",
+                    execution_status="success",
                     suggestions=[
-                        SuggestionItem(label="Pause music", action_type="music_pause"),
-                        SuggestionItem(label="Next song", action_type="music_next"),
-                        SuggestionItem(label="Set volume to 80", action_type="music_volume"),
+                        SuggestionItem(label="Search Tamil songs", action_type="music_search"),
+                        SuggestionItem(label="What can you do?", action_type="help"),
                     ]
                 )
-            else:
-                # If free extraction failed, try Spotify fallback
-                if spotify_service.is_authenticated():
-                    res = spotify_service.search_and_play(query)
-                    reply = res.get("message", "Triggered Spotify playback.")
-                    ctx.add_assistant_message(reply)
-                    return ChatResponse(
-                        message=reply,
-                        session_id=session_id,
-                    )
-                reply = f"⚠️ Could not find an audio stream for **\"{query}\"**. Please try another song title or artist!"
-                ctx.add_assistant_message(reply)
-                return ChatResponse(
-                    message=reply,
-                    session_id=session_id,
-                    suggestions=[
-                        SuggestionItem(label="Play Starboy", action_type="music_play"),
-                        SuggestionItem(label="Help", action_type="help"),
-                    ]
-                )
+
+            reply = f"Could not find any song matching **\"{query}\"**. Please try another title or artist!"
+            ctx.add_assistant_message(reply)
+            return ChatResponse(
+                message=reply,
+                session_id=session_id,
+                suggestions=[
+                    SuggestionItem(label="Search Pattuma", action_type="music_search"),
+                    SuggestionItem(label="Search Tamil songs", action_type="music_search"),
+                    SuggestionItem(label="Help", action_type="help"),
+                ]
+            )
 
         # ── Handle Pause ─────────────────────────────────────────────────────
         elif command.action == CommandAction.MUSIC_PAUSE:

@@ -27,10 +27,22 @@ class TrackPayload(BaseModel):
     id: Optional[str] = None
     title: str
     artist: str
+    album: Optional[str] = None
     album_art: Optional[str] = None
     audio_url: Optional[str] = None
     duration: Optional[int] = 0
+    duration_ms: Optional[int] = 0
+    release_date: Optional[str] = None
+    release_year: Optional[str] = None
+    external_url: Optional[str] = None
+    uri: Optional[str] = None
     webpage_url: Optional[str] = None
+    ranking_score: Optional[float] = None
+    # Provider-aware player fields
+    provider: Optional[str] = "youtube"
+    video_id: Optional[str] = None
+    channel_title: Optional[str] = None
+    thumbnail: Optional[str] = None
 
 
 class ChatResponse(BaseModel):

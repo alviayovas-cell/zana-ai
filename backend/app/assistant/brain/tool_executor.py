@@ -17,6 +17,7 @@ from typing import Any, Dict, Optional
 
 from app.core.logging_config import logger
 from app.services.spotify_service import spotify_service
+from app.services.youtube_service import youtube_service
 from app.services.free_music_service import free_music_service
 from app.assistant.brain.tool_registry import TOOL_REGISTRY, is_valid_tool
 from app.assistant.brain.context_manager import ConversationContext
@@ -95,8 +96,22 @@ class ToolExecutor:
 
         # ── Route to handler ─────────────────────────────────────────────────
         try:
-            if tool_name == "music_search_play":
-                return await self._music_search_play(arguments, ctx)
+            if tool_name == "music_play":
+                return await self._music_play(arguments, ctx)
+            elif tool_name == "youtube_search":
+                return await self._youtube_search(arguments, ctx)
+            elif tool_name in ("music_search", "music_search_play"):
+                if arguments.get("provider") == "youtube":
+                    return await self._music_play(arguments, ctx)
+                return await self._music_search(arguments, ctx)
+            elif tool_name == "artist_search":
+                return await self._artist_search(arguments, ctx)
+            elif tool_name == "album_search":
+                return await self._album_search(arguments, ctx)
+            elif tool_name == "playlist_search":
+                return await self._playlist_search(arguments, ctx)
+            elif tool_name == "open_spotify":
+                return await self._open_spotify(arguments, ctx)
             elif tool_name == "music_pause":
                 return self._music_pause()
             elif tool_name == "music_resume":
@@ -135,56 +150,202 @@ class ToolExecutor:
 
     # ── Tool handlers ────────────────────────────────────────────────────────
 
-    async def _music_search_play(
+    async def _music_play(
+        self, args: Dict[str, Any], ctx: Optional[ConversationContext]
+    ) -> ToolResult:
+        """
+        Play a song or music video in the Zana embedded player.
+        Defaults to YouTube provider using official YouTube Data API v3 and IFrame Player.
+        Supports explicit Spotify routing.
+        """
+        provider = str(args.get("provider", "youtube")).lower().strip()
+        query = str(args.get("query", args.get("track", ""))).strip()
+        artist_hint = args.get("artist")
+
+        if not query and ctx and ctx.current_track:
+            query = ctx.current_track.title
+            if not artist_hint:
+                artist_hint = ctx.current_track.artist
+
+        if not query:
+            return ToolResult(
+                success=False,
+                tool="music_play",
+                error="No song or artist specified to play.",
+            )
+
+        if provider == "spotify":
+            return await self._music_search(args, ctx)
+
+        # Default provider: YouTube
+        logger.info(f"[AI-BRAIN] _music_play (YouTube): query={query!r}, artist={artist_hint!r}")
+        yt_res = youtube_service.search_youtube(
+            query=query,
+            limit=10,
+            artist_hint=artist_hint,
+        )
+
+        best = yt_res.get("best_match")
+        if yt_res.get("success") and best:
+            from app.services.mongo_service import mongo_service
+            sid = ctx.session_id if ctx else "anonymous"
+            mongo_service.save_music_search_background(
+                session_id=sid,
+                query=query,
+                track_id=best.get("videoId"),
+                title=best.get("title"),
+                artist=best.get("artist"),
+                album=best.get("channelTitle"),
+                spotify_url=best.get("url"),
+            )
+            return ToolResult(
+                success=True,
+                tool="music_play",
+                data={
+                    "query": query,
+                    "provider": "youtube",
+                    "videoId": best.get("videoId"),
+                    "title": best.get("title"),
+                    "artist": best.get("artist"),
+                    "url": best.get("url"),
+                },
+                track_title=best.get("title"),
+                track_artist=best.get("artist"),
+                track_payload=best,
+            )
+
+        err_msg = yt_res.get("message") or f'Could not find "{query}" on YouTube.'
+        return ToolResult(
+            success=False,
+            tool="music_play",
+            error=err_msg,
+        )
+
+    async def _youtube_search(
+        self, args: Dict[str, Any], ctx: Optional[ConversationContext]
+    ) -> ToolResult:
+        """Search YouTube Data API v3 with deterministic ranking."""
+        query = str(args.get("query", "")).strip()
+        artist_hint = args.get("artist")
+        limit = int(args.get("limit", 10))
+        logger.info(f"[AI-BRAIN] _youtube_search: query={query!r}, artist={artist_hint!r}")
+
+        res = youtube_service.search_youtube(
+            query=query,
+            limit=limit,
+            artist_hint=artist_hint,
+        )
+        if not res.get("success"):
+            return ToolResult(
+                success=False,
+                tool="youtube_search",
+                error=res.get("message", "YouTube search failed."),
+            )
+
+        best = res.get("best_match")
+        return ToolResult(
+            success=True,
+            tool="youtube_search",
+            data={
+                "query": query,
+                "total": res.get("total", 0),
+                "tracks": res.get("tracks", []),
+                "best_match": best,
+            },
+            track_title=best.get("title") if best else None,
+            track_artist=best.get("artist") if best else None,
+            track_payload=best,
+        )
+
+    async def _music_search(
         self, args: Dict[str, Any], ctx: Optional[ConversationContext]
     ) -> ToolResult:
         query = str(args.get("query", "")).strip()
-        logger.info(f"[AI-BRAIN] music_search_play: query={query!r}")
+        artist_hint = args.get("artist")
+        language_hint = args.get("language")
+        logger.info(f"[AI-BRAIN] _music_search: query={query!r}, artist={artist_hint!r}, lang={language_hint!r}")
 
-        try:
-            track_info = free_music_service.search_and_extract(query)
-        except Exception as exc:
-            logger.error(f"[AI-BRAIN] free_music_service error: {exc}")
-            track_info = None
+        # 1. Search Spotify with deterministic ranking & pagination
+        sp_res = spotify_service.search_spotify(
+            query=query,
+            item_type="track",
+            limit=10,
+            offset=0,
+            artist_hint=artist_hint,
+            language_hint=language_hint,
+        )
 
-        if track_info and track_info.get("audio_url"):
-            payload = {
-                "id": track_info.get("id"),
-                "title": track_info.get("title", query),
-                "artist": track_info.get("artist", "Unknown Artist"),
-                "album_art": track_info.get("album_art"),
-                "audio_url": track_info.get("audio_url"),
-                "duration": track_info.get("duration", 0),
-                "webpage_url": track_info.get("webpage_url"),
-            }
+        best = sp_res.get("best_match")
+        if sp_res.get("success") and best:
+            from app.services.mongo_service import mongo_service
+            sid = ctx.session_id if ctx else "anonymous"
+            mongo_service.save_music_search_background(
+                session_id=sid,
+                query=query,
+                track_id=best.get("id"),
+                title=best.get("title"),
+                artist=best.get("artist"),
+                album=best.get("album"),
+                spotify_url=best.get("external_url"),
+            )
             return ToolResult(
                 success=True,
-                tool="music_search_play",
-                data={"query": query},
-                track_title=payload["title"],
-                track_artist=payload["artist"],
-                track_payload=payload,
-                action="play",
+                tool="music_search",
+                data={"query": query, "open_url": best.get("external_url"), "uri": best.get("uri")},
+                track_title=best.get("title"),
+                track_artist=best.get("artist"),
+                track_payload=best,
             )
 
-        # Fallback: try Spotify
-        if spotify_service.is_authenticated():
-            sp_result = spotify_service.search_and_play(query)
-            if sp_result.get("success"):
-                track = sp_result.get("track", {})
+        # 2. Free music service fallback if Spotify search returned nothing
+        try:
+            track_info = free_music_service.search_and_extract(query)
+            if track_info:
                 return ToolResult(
                     success=True,
-                    tool="music_search_play",
-                    data={"query": query, "via": "spotify"},
-                    track_title=track.get("name", query),
-                    track_artist=track.get("artists", ""),
+                    tool="music_search",
+                    data={"query": query, "open_url": track_info.get("webpage_url")},
+                    track_title=track_info.get("title", query),
+                    track_artist=track_info.get("artist", "Unknown Artist"),
+                    track_payload=track_info,
                 )
+        except Exception as exc:
+            logger.warning(f"[AI-BRAIN] Free music fallback error: {exc}")
 
+        err_msg = sp_res.get("message") or f"Could not find any song matching \"{query}\"."
         return ToolResult(
             success=False,
-            tool="music_search_play",
-            error=f"Could not find a stream for \"{query}\". Try a different song title.",
+            tool="music_search",
+            error=err_msg,
         )
+
+    async def _artist_search(
+        self, args: Dict[str, Any], ctx: Optional[ConversationContext]
+    ) -> ToolResult:
+        artist = str(args.get("artist", args.get("query", ""))).strip()
+        logger.info(f"[AI-BRAIN] _artist_search: artist={artist!r}")
+        return await self._music_search({"query": artist, "artist": artist}, ctx)
+
+    async def _album_search(
+        self, args: Dict[str, Any], ctx: Optional[ConversationContext]
+    ) -> ToolResult:
+        album = str(args.get("album", args.get("query", ""))).strip()
+        logger.info(f"[AI-BRAIN] _album_search: album={album!r}")
+        return await self._music_search({"query": album, "album": album}, ctx)
+
+    async def _playlist_search(
+        self, args: Dict[str, Any], ctx: Optional[ConversationContext]
+    ) -> ToolResult:
+        query = str(args.get("query", "")).strip()
+        logger.info(f"[AI-BRAIN] _playlist_search: query={query!r}")
+        return await self._music_search({"query": f"{query} playlist"}, ctx)
+
+    async def _open_spotify(
+        self, args: Dict[str, Any], ctx: Optional[ConversationContext]
+    ) -> ToolResult:
+        query = str(args.get("query", "")).strip()
+        logger.info(f"[AI-BRAIN] _open_spotify: query={query!r}")
+        return await self._music_search({"query": query}, ctx)
 
     def _music_pause(self) -> ToolResult:
         logger.info("[AI-BRAIN] music_pause")

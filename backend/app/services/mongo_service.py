@@ -79,12 +79,61 @@ class MongoService:
         try:
             await self._db.conversations.create_index([("session_id", 1), ("created_at", -1)])
             await self._db.memories.create_index([("session_id", 1), ("key", 1)], unique=False)
+            await self._db.music_searches.create_index([("session_id", 1), ("created_at", -1)])
             logger.info("[MEMORY] MongoDB collection indexes verified.")
         except Exception as exc:
             logger.warning(f"[MEMORY] Index creation warning: {exc}")
 
     def is_connected(self) -> bool:
         return self._is_connected
+
+    # ── Music Search History Persistence ──────────────────────────────────────
+
+    async def save_music_search(
+        self,
+        session_id: str,
+        query: str,
+        track_id: Optional[str] = None,
+        title: Optional[str] = None,
+        artist: Optional[str] = None,
+        album: Optional[str] = None,
+        spotify_url: Optional[str] = None,
+    ) -> None:
+        """Save a music search record to MongoDB."""
+        if not self._is_connected or self._db is None:
+            return
+        try:
+            doc = {
+                "session_id": session_id,
+                "query": query,
+                "track_id": track_id,
+                "title": title,
+                "artist": artist,
+                "album": album,
+                "spotify_url": spotify_url,
+                "created_at": time.time(),
+            }
+            await self._db.music_searches.insert_one(doc)
+            logger.debug(f"[MEMORY] Saved music search for '{query}' (session={session_id}) to MongoDB")
+        except Exception as exc:
+            logger.warning(f"[MEMORY] Error saving music search to MongoDB: {exc}")
+
+    def save_music_search_background(
+        self,
+        session_id: str,
+        query: str,
+        track_id: Optional[str] = None,
+        title: Optional[str] = None,
+        artist: Optional[str] = None,
+        album: Optional[str] = None,
+        spotify_url: Optional[str] = None,
+    ) -> None:
+        """Persist music search record without blocking the API response."""
+        if not self._is_connected or self._db is None:
+            return
+        asyncio.create_task(
+            self.save_music_search(session_id, query, track_id, title, artist, album, spotify_url)
+        )
 
     # ── Conversations Persistence ──────────────────────────────────────────────
 

@@ -17,6 +17,36 @@ class PlayerControlRequest(BaseModel):
     volume_percent: Optional[int] = None
 
 
+@router.get("/capabilities")
+async def get_capabilities():
+    """Returns the Spotify feature capabilities for the current configuration."""
+    return spotify_service.get_capabilities()
+
+
+@router.get("/search")
+async def search_spotify(
+    query: str = Query(..., min_length=1, description="Search query"),
+    limit: int = Query(10, ge=1, le=10, description="Max 10 results for Development Mode"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+    artist: Optional[str] = Query(None, description="Optional artist hint"),
+    language: Optional[str] = Query(None, description="Optional language hint (e.g. Tamil)"),
+):
+    """
+    Search Spotify catalog with pagination (limit <= 10) and deterministic ranking.
+    """
+    res = spotify_service.search_spotify(
+        query=query,
+        item_type="track",
+        limit=limit,
+        offset=offset,
+        artist_hint=artist,
+        language_hint=language,
+    )
+    if not res.get("success"):
+        raise HTTPException(status_code=400 if res.get("error") != "spotify_rate_limited" else 429, detail=res.get("message", "Search failed"))
+    return res
+
+
 @router.get("/auth-url")
 async def get_auth_url():
     """Returns Spotify login URL."""
@@ -50,12 +80,13 @@ async def spotify_callback(code: Optional[str] = Query(None), error: Optional[st
 
 @router.get("/status")
 async def get_spotify_status():
-    """Check Spotify login status and user profile."""
+    """Check Spotify login status, user profile, and capability matrix."""
     is_auth = spotify_service.is_authenticated()
     user = spotify_service.get_current_user() if is_auth else None
     return {
         "is_authenticated": is_auth,
         "user": user,
+        "capabilities": spotify_service.get_capabilities(),
     }
 
 
@@ -67,7 +98,7 @@ async def get_player_state():
 
 @router.post("/player/control")
 async def control_player(request: PlayerControlRequest):
-    """Execute playback actions."""
+    """Execute playback actions safely in Free mode."""
     action = request.action.lower()
 
     if action == "play":
