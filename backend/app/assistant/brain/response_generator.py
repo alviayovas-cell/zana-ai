@@ -108,23 +108,67 @@ class ResponseGenerator:
         ):
             return self._error_response(tool_result, session_id, intent_result)
 
-        # ── music_play (YouTube Embedded Playback) ───────────────────────────
-        if (intent == "music_play" or tool_result.tool == "music_play") and tool_result.success and tool_result.track_payload:
-            artist_suffix = f" by **{tool_result.track_artist}**" if tool_result.track_artist else ""
-            reply_text = f"Playing **{tool_result.track_title}**{artist_suffix} from YouTube."
+        # ── music_play (SoundCloud Audio Playback or YouTube Embedded Playback) ───
+        if (intent in ("music_play", "soundcloud_play") or tool_result.tool == "music_play") and tool_result.success and tool_result.track_payload:
             pl_dict = dict(tool_result.track_payload)
-            pl_dict["provider"] = pl_dict.get("provider", "youtube")
-            payload = TrackPayload(**pl_dict)
+            provider = pl_dict.get("provider", "soundcloud")
+            artist_suffix = f" by **{tool_result.track_artist}**" if tool_result.track_artist else ""
+            if provider == "soundcloud":
+                reply_text = f"I found **{tool_result.track_title}**{artist_suffix}. Starting playback."
+                payload = TrackPayload(**pl_dict)
+                return ChatResponse(
+                    message=reply_text,
+                    session_id=session_id,
+                    track=payload,
+                    action="play",
+                    action_value={"provider": "soundcloud", "id": payload.id, "urn": payload.urn},
+                    suggestions=[
+                        SuggestionItem(label="Pause", action_type="music_pause"),
+                        SuggestionItem(label="Next song", action_type="music_next"),
+                        SuggestionItem(label="Open on SoundCloud", action_type="open_soundcloud", payload=payload.permalinkUrl or payload.webpage_url),
+                    ],
+                    intent=intent,
+                    confidence=intent_result.confidence,
+                    tool=tool_result.tool,
+                    arguments=intent_result.arguments,
+                    execution_status="success",
+                )
+            else:
+                reply_text = f"Playing **{tool_result.track_title}**{artist_suffix} from YouTube."
+                pl_dict["provider"] = "youtube"
+                payload = TrackPayload(**pl_dict)
+                return ChatResponse(
+                    message=reply_text,
+                    session_id=session_id,
+                    track=payload,
+                    action="play",
+                    action_value={"provider": "youtube", "videoId": payload.video_id or payload.id},
+                    suggestions=[
+                        SuggestionItem(label="Pause", action_type="music_pause"),
+                        SuggestionItem(label="Next song", action_type="music_next"),
+                        SuggestionItem(label="Open on YouTube", action_type="open_youtube", payload=payload.webpage_url),
+                    ],
+                    intent=intent,
+                    confidence=intent_result.confidence,
+                    tool=tool_result.tool,
+                    arguments=intent_result.arguments,
+                    execution_status="success",
+                )
+
+        # ── soundcloud_search ────────────────────────────────────────────────
+        if (intent == "soundcloud_search" or tool_result.tool == "soundcloud_search") and tool_result.success and tool_result.track_payload:
+            artist_suffix = f" by **{tool_result.track_artist}**" if tool_result.track_artist else ""
+            reply_text = f"I found **{tool_result.track_title}**{artist_suffix} on SoundCloud."
+            payload = TrackPayload(**tool_result.track_payload)
             return ChatResponse(
                 message=reply_text,
                 session_id=session_id,
                 track=payload,
-                action="play",
-                action_value={"provider": payload.provider, "videoId": payload.video_id or payload.id},
+                action=None,
                 suggestions=[
-                    SuggestionItem(label="Pause", action_type="music_pause"),
-                    SuggestionItem(label="Next song", action_type="music_next"),
-                    SuggestionItem(label="Open on YouTube", action_type="open_youtube", payload=payload.webpage_url),
+                    SuggestionItem(label="Play song", action_type="music_play"),
+                    SuggestionItem(label="Open on SoundCloud", action_type="open_soundcloud", payload=payload.permalinkUrl or payload.webpage_url),
+                    SuggestionItem(label="Search on Spotify", action_type="music_search"),
                 ],
                 intent=intent,
                 confidence=intent_result.confidence,

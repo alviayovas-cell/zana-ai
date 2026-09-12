@@ -33,6 +33,15 @@ export interface TrackPayload {
   channelTitle?: string | null;
   channel_title?: string | null;
   thumbnail?: string | null;
+  // SoundCloud fields
+  urn?: string | null;
+  creator?: string | null;
+  artworkUrl?: string | null;
+  permalinkUrl?: string | null;
+  permalink_url?: string | null;
+  access?: 'playable' | 'preview' | 'blocked' | string | null;
+  streamable?: boolean | null;
+  url?: string | null;
 }
 
 export interface ChatResponse {

@@ -52,6 +52,10 @@ class Settings(BaseSettings):
     # YouTube Playback Provider Configuration
     YOUTUBE_API_KEY: str = ""
 
+    # SoundCloud Playback Provider Configuration (OAuth 2.1)
+    SOUNDCLOUD_CLIENT_ID: str = ""
+    SOUNDCLOUD_CLIENT_SECRET: str = ""
+
 
     @field_validator("BACKEND_CORS_ORIGINS", mode="before")
     @classmethod

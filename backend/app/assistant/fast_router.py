@@ -101,6 +101,18 @@ class FastCommandRouter:
         r"^(?:please\s+)?open\s+(.+?)(?:\s+(?:on|in)\s+spotify)?\s*$",
         re.IGNORECASE,
     )
+    _PLAY_SOUNDCLOUD_EXPLICIT_RE = re.compile(
+        r"^(?:please\s+)?(?:play(?:\s+(?:this|it|song|track))?\s+(?:on|in)\s+soundcloud|listen\s+(?:on|in)\s+soundcloud)(?:\s+(.+))?\s*$",
+        re.IGNORECASE,
+    )
+    _SEARCH_SOUNDCLOUD_RE = re.compile(
+        r"^(?:please\s+)?(?:search|find)\s+soundcloud\s+(?:for\s+)?(.+?)\s*$",
+        re.IGNORECASE,
+    )
+    _SEARCH_SOUNDCLOUD_ALT_RE = re.compile(
+        r"^(?:please\s+)?(?:search|find)\s+(.+?)\s+(?:on|in)\s+soundcloud\s*$",
+        re.IGNORECASE,
+    )
     _PLAY_YOUTUBE_EXPLICIT_RE = re.compile(
         r"^(?:please\s+)?(?:play(?:\s+(?:this|it|song|track))?\s+(?:on|in)\s+youtube|watch\s+(?:on|in)\s+youtube)(?:\s+(.+))?\s*$",
         re.IGNORECASE,
@@ -233,7 +245,53 @@ class FastCommandRouter:
                 reason="Status match",
             )
 
-        # 10. Explicit Play on YouTube
+        # 10. Explicit Play on SoundCloud
+        sc_explicit_match = self._PLAY_SOUNDCLOUD_EXPLICIT_RE.match(norm)
+        if sc_explicit_match:
+            sc_q = (sc_explicit_match.group(1) or "").strip()
+            params = {"provider": "soundcloud"}
+            if sc_q:
+                params["query"] = sc_q
+                by_match = re.search(r"(.+?)\s+by\s+(.+)", sc_q, re.IGNORECASE)
+                if by_match:
+                    params["track"] = by_match.group(1).strip()
+                    params["artist"] = by_match.group(2).strip()
+                else:
+                    params["track"] = sc_q
+                    params["artist"] = None
+            logger.info(f"[ROUTER] Input: {norm!r} | Matched: MUSIC_PLAY on SoundCloud ({sc_q!r}) | Confidence: 0.98 | Mode: FastDirect")
+            return FastRouteResult(
+                matched=True,
+                action=CommandAction.MUSIC_PLAY,
+                query=sc_q or norm,
+                parameters=params,
+                confidence=0.98,
+                reason=f"Direct play on SoundCloud match: {sc_q or 'current/explicit'}",
+            )
+
+        # 11. Explicit Search on SoundCloud
+        sc_search_match = self._SEARCH_SOUNDCLOUD_RE.match(norm) or self._SEARCH_SOUNDCLOUD_ALT_RE.match(norm)
+        if sc_search_match:
+            sc_search_q = sc_search_match.group(1).strip()
+            params = {"query": sc_search_q, "provider": "soundcloud"}
+            by_match = re.search(r"(.+?)\s+by\s+(.+)", sc_search_q, re.IGNORECASE)
+            if by_match:
+                params["track"] = by_match.group(1).strip()
+                params["artist"] = by_match.group(2).strip()
+            else:
+                params["track"] = sc_search_q
+                params["artist"] = None
+            logger.info(f"[ROUTER] Input: {norm!r} | Matched: SOUNDCLOUD_SEARCH ({sc_search_q!r}) | Confidence: 0.98 | Mode: FastDirect")
+            return FastRouteResult(
+                matched=True,
+                action=CommandAction.SOUNDCLOUD_SEARCH,
+                query=sc_search_q,
+                parameters=params,
+                confidence=0.98,
+                reason=f"Direct SoundCloud search match: {sc_search_q}",
+            )
+
+        # 12. Explicit Play on YouTube
         yt_explicit_match = self._PLAY_YOUTUBE_EXPLICIT_RE.match(norm)
         if yt_explicit_match:
             yt_q = (yt_explicit_match.group(1) or "").strip()
@@ -256,7 +314,7 @@ class FastCommandRouter:
                 reason=f"Direct play on YouTube match: {yt_q or 'current/explicit'}",
             )
 
-        # 11. Open in Spotify
+        # 13. Open in Spotify
         open_sp_match = self._OPEN_SPOTIFY_RE.match(norm) or self._OPEN_SPOTIFY_BARE_RE.match(norm)
         if open_sp_match:
             song_q = open_sp_match.group(1).strip()
@@ -270,7 +328,7 @@ class FastCommandRouter:
                 reason=f"Direct open Spotify match: {song_q}",
             )
 
-        # 12. Find / Search Artist
+        # 14. Find / Search Artist
         artist_match = self._FIND_ARTIST_RE.match(norm)
         if artist_match:
             artist_q = artist_match.group(1).strip()
@@ -284,7 +342,7 @@ class FastCommandRouter:
                 reason=f"Artist search match: {artist_q}",
             )
 
-        # 13. Search / Find Song or Topic
+        # 15. Search / Find Song or Topic
         search_match = self._SEARCH_RE.match(norm)
         if search_match:
             search_q = search_match.group(1).strip()
@@ -304,7 +362,7 @@ class FastCommandRouter:
                 reason=f"Music search match: {search_q}",
             )
 
-        # 14. Play Song (YouTube provider default for in-page embedded playback)
+        # 16. Play Song (SoundCloud provider default for in-page audio playback)
         play_match = self._PLAY_RE.match(norm)
         if play_match:
             play_q = play_match.group(1).strip()
@@ -325,23 +383,45 @@ class FastCommandRouter:
                         reason=f"Play on Spotify match: {clean_sp_q}",
                     )
 
-                clean_play_q = re.sub(r"\b(?:on|in)\s+youtube\b", "", play_q, flags=re.IGNORECASE).strip()
+                # Check if user explicitly asked for YouTube
+                if re.search(r"\b(?:on|in)\s+youtube\b", play_q, re.IGNORECASE):
+                    clean_yt_q = re.sub(r"\b(?:on|in)\s+youtube\b", "", play_q, flags=re.IGNORECASE).strip()
+                    by_match = re.search(r"(.+?)\s+by\s+(.+)", clean_yt_q, re.IGNORECASE)
+                    params = {"query": clean_yt_q, "provider": "youtube"}
+                    if by_match:
+                        params["track"] = by_match.group(1).strip()
+                        params["artist"] = by_match.group(2).strip()
+                    else:
+                        params["track"] = clean_yt_q
+                    logger.info(f"[ROUTER] Input: {norm!r} | Matched: MUSIC_PLAY YouTube ({clean_yt_q!r})")
+                    return FastRouteResult(
+                        matched=True,
+                        action=CommandAction.MUSIC_PLAY,
+                        query=clean_yt_q,
+                        parameters=params,
+                        confidence=0.98,
+                        reason=f"Music play YouTube match: {clean_yt_q}",
+                    )
+
+                # Default provider: SoundCloud for in-page audio playback
+                clean_play_q = re.sub(r"\b(?:on|in)\s+soundcloud\b", "", play_q, flags=re.IGNORECASE).strip()
                 by_match = re.search(r"(.+?)\s+by\s+(.+)", clean_play_q, re.IGNORECASE)
-                params = {"query": clean_play_q, "provider": "youtube"}
+                params = {"query": clean_play_q, "provider": "soundcloud"}
                 if by_match:
                     params["track"] = by_match.group(1).strip()
                     params["artist"] = by_match.group(2).strip()
                 else:
                     params["track"] = clean_play_q
+                    params["artist"] = None
 
-                logger.info(f"[ROUTER] Input: {norm!r} | Matched: MUSIC_PLAY ({clean_play_q!r}) | Confidence: 0.98 | Mode: FastDirect")
+                logger.info(f"[ROUTER] Input: {norm!r} | Matched: MUSIC_PLAY SoundCloud ({clean_play_q!r}) | Confidence: 0.98 | Mode: FastDirect")
                 return FastRouteResult(
                     matched=True,
                     action=CommandAction.MUSIC_PLAY,
                     query=clean_play_q,
                     parameters=params,
                     confidence=0.98,
-                    reason=f"Music play match: {clean_play_q}",
+                    reason=f"Music play SoundCloud match: {clean_play_q}",
                 )
 
         # Unmatched / Ambiguous / Complex -> Pass to AI Brain

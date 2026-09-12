@@ -41,8 +41,17 @@ class TrackPayload(BaseModel):
     # Provider-aware player fields
     provider: Optional[str] = "youtube"
     video_id: Optional[str] = None
+    videoId: Optional[str] = None
     channel_title: Optional[str] = None
+    channelTitle: Optional[str] = None
     thumbnail: Optional[str] = None
+    # SoundCloud fields
+    urn: Optional[str] = None
+    creator: Optional[str] = None
+    artworkUrl: Optional[str] = None
+    permalinkUrl: Optional[str] = None
+    access: Optional[str] = None  # "playable", "preview", "blocked"
+    streamable: Optional[bool] = True
 
 
 class ChatResponse(BaseModel):

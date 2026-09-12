@@ -61,6 +61,12 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
   const [autoplayBlocked, setAutoplayBlocked] = useState<boolean>(false);
   const [isVideoExpanded, setIsVideoExpanded] = useState<boolean>(false);
   const [ytApiReady, setYtApiReady] = useState<boolean>(false);
+  const [artError, setArtError] = useState<boolean>(false);
+
+  // Reset art error when active track changes
+  useEffect(() => {
+    setArtError(false);
+  }, [activeTrack?.id, activeTrack?.title, activeTrack?.album_art, activeTrack?.thumbnail]);
 
   // Determine current active provider
   const currentProvider: ProviderType =
@@ -71,12 +77,17 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
       : (activeTrack?.videoId || activeTrack?.video_id)
       ? 'youtube'
       : activeTrack?.audio_url
-      ? 'youtube' // fallback to embedded/audio
+      ? 'soundcloud'
+      : playback.track
+      ? 'spotify'
       : 'youtube';
 
-  const currentVideoId = activeTrack?.videoId || activeTrack?.video_id || (
-    activeTrack?.id && activeTrack.id.length === 11 ? activeTrack.id : null
-  );
+  const currentVideoId =
+    currentProvider === 'youtube'
+      ? (activeTrack?.videoId || activeTrack?.video_id || (activeTrack?.id && activeTrack.id.length === 11 ? activeTrack.id : null))
+      : null;
+
+  const isEffectivePlaying = currentProvider === 'spotify' ? Boolean(playback.is_playing) : isPlaying;
 
   // ── Load official YouTube IFrame Player API ──────────────────────────────
   useEffect(() => {
@@ -235,12 +246,13 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
     };
   }, [isPlaying]);
 
-  // ── TTS Audio Ducking ────────────────────────────────────────────────────
-  // When assistant is speaking, duck the volume to 20% of user setting
+  // ── TTS Audio Ducking & Volume Update ────────────────────────────────────
   useEffect(() => {
     const effectiveVolume = isSpeaking ? volume * 0.2 : volume;
     if (ytPlayerRef.current && typeof ytPlayerRef.current.setVolume === 'function') {
-      ytPlayerRef.current.setVolume(Math.round(effectiveVolume * 100));
+      try {
+        ytPlayerRef.current.setVolume(Math.round(effectiveVolume * 100));
+      } catch {}
     }
     if (audioRef.current) {
       audioRef.current.volume = effectiveVolume;
@@ -250,7 +262,9 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
   // ── Imperative ref controls (parent can trigger play/pause/volume/seek) ──
   useImperativeHandle(ref, () => ({
     play: () => {
-      if (currentVideoId && ytPlayerRef.current && typeof ytPlayerRef.current.playVideo === 'function') {
+      if (currentProvider === 'spotify') {
+        onControl('resume');
+      } else if (currentVideoId && ytPlayerRef.current && typeof ytPlayerRef.current.playVideo === 'function') {
         try {
           ytPlayerRef.current.playVideo();
           setIsPlaying(true);
@@ -258,12 +272,26 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
         } catch (e) {
           console.warn('[YT-PLAYER] playVideo error:', e);
         }
-      } else if (audioRef.current) {
-        audioRef.current.play().then(() => setIsPlaying(true)).catch(console.error);
+      } else if (audioRef.current && (audioRef.current.src || activeTrack?.audio_url)) {
+        if (!audioRef.current.src && activeTrack?.audio_url) {
+          audioRef.current.src = activeTrack.audio_url;
+        }
+        const promise = audioRef.current.play();
+        if (promise !== undefined) {
+          promise
+            .then(() => setIsPlaying(true))
+            .catch((err) => {
+              if (err.name !== 'AbortError') {
+                console.warn('[AUDIO] play error:', err);
+              }
+            });
+        }
       }
     },
     pause: () => {
-      if (currentVideoId && ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
+      if (currentProvider === 'spotify') {
+        onControl('pause');
+      } else if (currentVideoId && ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
         try {
           ytPlayerRef.current.pauseVideo();
           setIsPlaying(false);
@@ -279,14 +307,18 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
       const clamped = Math.max(0, Math.min(1, val));
       setVolume(clamped);
       if (ytPlayerRef.current && typeof ytPlayerRef.current.setVolume === 'function') {
-        ytPlayerRef.current.setVolume(Math.round(clamped * 100));
+        try {
+          ytPlayerRef.current.setVolume(Math.round(clamped * 100));
+        } catch {}
       }
       if (audioRef.current) {
         audioRef.current.volume = clamped;
       }
     },
     seek: (val: number) => {
-      if (currentVideoId && ytPlayerRef.current && typeof ytPlayerRef.current.seekTo === 'function') {
+      if (currentProvider === 'spotify') {
+        onControl('seek', { volume_percent: Math.round(val * 1000) });
+      } else if (currentVideoId && ytPlayerRef.current && typeof ytPlayerRef.current.seekTo === 'function') {
         ytPlayerRef.current.seekTo(val, true);
         setCurrentTime(val);
       } else if (audioRef.current) {
@@ -296,22 +328,60 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
     },
   }));
 
-  // ── HTML5 Audio Fallback ─────────────────────────────────────────────────
+  // ── HTML5 Audio Fallback & SoundCloud Playback ───────────────────────────
   useEffect(() => {
-    if (activeTrack?.audio_url && !currentVideoId && audioRef.current) {
-      audioRef.current.src = activeTrack.audio_url;
-      audioRef.current.volume = volume;
-      audioRef.current.play().then(() => {
-        setIsPlaying(true);
-      }).catch((err) => {
-        console.warn('[AUDIO] Autoplay error:', err);
-        setAutoplayBlocked(true);
-      });
+    const isSoundCloudOrDirect = currentProvider === 'soundcloud' || Boolean(activeTrack?.audio_url && !currentVideoId);
+    if (!isSoundCloudOrDirect || !activeTrack?.audio_url) return;
+
+    // Pause YouTube video if it was playing
+    if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
+      try {
+        ytPlayerRef.current.pauseVideo();
+      } catch {}
     }
-  }, [activeTrack, currentVideoId, volume]);
+
+    if (audioRef.current) {
+      if (audioRef.current.src !== activeTrack.audio_url) {
+        audioRef.current.src = activeTrack.audio_url;
+        audioRef.current.volume = isSpeaking ? volume * 0.2 : volume;
+        audioRef.current.load();
+        const promise = audioRef.current.play();
+        if (promise !== undefined) {
+          promise
+            .then(() => {
+              setIsPlaying(true);
+              setIsBuffering(false);
+              setAutoplayBlocked(false);
+              setPlaybackError(null);
+            })
+            .catch((err) => {
+              if (err.name === 'AbortError') {
+                return;
+              }
+              console.warn('[AUDIO] Autoplay error:', err);
+              setAutoplayBlocked(true);
+            });
+        }
+      }
+    }
+  }, [activeTrack?.audio_url, currentProvider, currentVideoId]);
 
   const togglePlay = () => {
+    // 1. Spotify Provider
+    if (currentProvider === 'spotify' || (playback.track && !currentVideoId && !activeTrack?.audio_url)) {
+      if (playback.is_playing) {
+        onControl('pause');
+      } else {
+        onControl('resume');
+      }
+      return;
+    }
+
+    // 2. YouTube Provider
     if (currentVideoId && ytPlayerRef.current) {
+      if (audioRef.current) {
+        try { audioRef.current.pause(); } catch {}
+      }
       if (isPlaying) {
         try {
           ytPlayerRef.current.pauseVideo();
@@ -329,31 +399,56 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
       return;
     }
 
-    if (!audioRef.current) return;
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-      onControl('pause');
-    } else {
-      audioRef.current.play().then(() => {
-        setIsPlaying(true);
-        setAutoplayBlocked(false);
-        onControl('resume');
-      }).catch(console.error);
+    // 3. Direct Audio / SoundCloud Provider
+    if (audioRef.current && (audioRef.current.src || activeTrack?.audio_url)) {
+      if (ytPlayerRef.current && typeof ytPlayerRef.current.pauseVideo === 'function') {
+        try { ytPlayerRef.current.pauseVideo(); } catch {}
+      }
+      if (isPlaying) {
+        audioRef.current.pause();
+        setIsPlaying(false);
+        onControl('pause');
+      } else {
+        if (!audioRef.current.src && activeTrack?.audio_url) {
+          audioRef.current.src = activeTrack.audio_url;
+        }
+        const promise = audioRef.current.play();
+        if (promise !== undefined) {
+          promise
+            .then(() => {
+              setIsPlaying(true);
+              setAutoplayBlocked(false);
+              onControl('resume');
+            })
+            .catch((err) => {
+              if (err.name !== 'AbortError') {
+                console.warn('[AUDIO] Play error:', err);
+                setAutoplayBlocked(true);
+              }
+            });
+        }
+      }
+      return;
     }
   };
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {
       setCurrentTime(audioRef.current.currentTime);
-      setDuration(audioRef.current.duration || 0);
+      if (audioRef.current.duration && !isNaN(audioRef.current.duration) && audioRef.current.duration > 0) {
+        setDuration(audioRef.current.duration);
+      } else if (activeTrack?.duration) {
+        setDuration(activeTrack.duration);
+      }
     }
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const targetTime = Number(e.target.value);
     setCurrentTime(targetTime);
-    if (currentVideoId && ytPlayerRef.current && typeof ytPlayerRef.current.seekTo === 'function') {
+    if (currentProvider === 'spotify') {
+      onControl('seek', { volume_percent: Math.round(targetTime * 1000) });
+    } else if (currentVideoId && ytPlayerRef.current && typeof ytPlayerRef.current.seekTo === 'function') {
       ytPlayerRef.current.seekTo(targetTime, true);
     } else if (audioRef.current) {
       audioRef.current.currentTime = targetTime;
@@ -385,8 +480,19 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
     activeTrack?.album_art ||
     activeTrack?.thumbnail ||
     playback.track?.album_art;
-  const isAudioActive = Boolean(currentVideoId || activeTrack?.audio_url || playback.is_playing || isPlaying);
-  const displayProgress = duration ? (currentTime / duration) * 100 : 0;
+  const isAudioActive = Boolean(currentVideoId || activeTrack?.audio_url || playback.track || playback.is_playing || isPlaying);
+
+  const currentTimeDisplay =
+    currentProvider === 'spotify'
+      ? (playback.progress_ms ? playback.progress_ms / 1000 : 0)
+      : currentTime;
+
+  const durationDisplay =
+    currentProvider === 'spotify'
+      ? (playback.track?.duration_ms ? playback.track.duration_ms / 1000 : 0)
+      : (duration || activeTrack?.duration || 0);
+
+  const displayProgress = durationDisplay > 0 ? (currentTimeDisplay / durationDisplay) * 100 : 0;
 
   return (
     <>
@@ -473,21 +579,25 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
         <audio
           ref={audioRef}
           onTimeUpdate={handleTimeUpdate}
-          onEnded={() => setIsPlaying(false)}
+          onEnded={() => {
+            setIsPlaying(false);
+            onControl('next');
+          }}
           onPause={() => setIsPlaying(false)}
           onPlay={() => setIsPlaying(true)}
         />
 
         {/* Left: Track Info */}
         <div className="player-track-info">
-          {currentArt ? (
+          {currentArt && !artError ? (
             <img
               src={currentArt}
               alt={currentTitle}
-              className={`player-album-art ${isPlaying ? 'art-pulse' : ''}`}
+              className={`player-album-art ${isEffectivePlaying ? 'art-pulse' : ''}`}
+              onError={() => setArtError(true)}
             />
           ) : (
-            <div className="player-album-placeholder">
+            <div className="player-album-placeholder" title={currentTitle}>
               <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />
                 <circle cx="12" cy="12" r="3" />
@@ -498,7 +608,7 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
           <div className="player-meta">
             <div className="player-title-row">
               <span className="player-track-name" title={currentTitle}>{currentTitle}</span>
-              {isPlaying && (
+              {isEffectivePlaying && (
                 <div className="equalizer-waves" aria-hidden="true">
                   <span />
                   <span />
@@ -527,13 +637,13 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
 
             <button
               className={`player-btn btn-play-main ${isBuffering ? 'btn-buffering' : ''}`}
-              title={isPlaying ? 'Pause' : 'Play'}
+              title={isEffectivePlaying ? 'Pause' : 'Play'}
               onClick={togglePlay}
-              disabled={!isAudioActive && !playback.track}
+              disabled={!isAudioActive}
             >
               {isBuffering ? (
                 <span className="btn-spinner" />
-              ) : isPlaying ? (
+              ) : isEffectivePlaying ? (
                 <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
                   <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
                 </svg>
@@ -557,13 +667,13 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
           </div>
 
           <div className="player-progress-bar-container">
-            <span className="player-time">{formatTime(currentTime)}</span>
+            <span className="player-time">{formatTime(currentTimeDisplay)}</span>
             <div className="player-progress-track">
               <input
                 type="range"
                 min="0"
-                max={duration || 100}
-                value={currentTime}
+                max={durationDisplay || 100}
+                value={currentTimeDisplay}
                 onChange={handleSeek}
                 className="player-seek-slider"
                 aria-label="Seek track position"
@@ -573,7 +683,7 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
                 style={{ width: `${Math.min(100, Math.max(0, displayProgress))}%` }}
               />
             </div>
-            <span className="player-time">{formatTime(duration || (activeTrack?.duration || 0))}</span>
+            <span className="player-time">{formatTime(durationDisplay)}</span>
           </div>
         </div>
 
@@ -586,6 +696,15 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
                 <path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/>
               </svg>
               <span>YouTube</span>
+            </div>
+          )}
+
+          {currentProvider === 'soundcloud' && (
+            <div className="player-provider-tag tag-soundcloud" title="Playing via official SoundCloud API">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="#ff5500">
+                <path d="M1.16 13.79c-.06 0-.11.05-.11.11v2.85c0 .06.05.11.11.11.06 0 .11-.05.11-.11v-2.85c0-.06-.05-.11-.11-.11zm1.09-1.5c-.07 0-.13.06-.13.13v4.35c0 .07.06.13.13.13s.13-.06.13-.13v-4.35c0-.07-.06-.13-.13-.13zm1.18-.75c-.08 0-.14.06-.14.14v5.1c0 .08.06.14.14.14.08 0 .14-.06.14-.14v-5.1c0-.08-.06-.14-.14-.14zm1.19-.34c-.08 0-.15.07-.15.15v5.77c0 .08.07.15.15.15.08 0 .15-.07.15-.15v-5.77c0-.08-.07-.15-.15-.15zm1.19.46c-.09 0-.16.07-.16.16v5.32c0 .09.07.16.16.16.09 0 .16-.07.16-.16v-5.32c0-.09-.07-.16-.16-.16zm1.19-.92c-.09 0-.17.08-.17.17v6.24c0 .09.08.17.17.17.09 0 .17-.08.17-.17v-6.24c0-.09-.08-.17-.17-.17zm1.19-.24c-.1 0-.18.08-.18.18v6.48c0 .1.08.18.18.18.1 0 .18-.08.18-.18v-6.48c0-.1-.08-.18-.18-.18zm1.2-.55c-.1 0-.19.08-.19.19v7.02c0 .1.09.19.19.19.1 0 .19-.09.19-.19v-7.02c0-.11-.09-.19-.19-.19zm1.19.34c-.11 0-.2.09-.2.2v6.68c0 .11.09.2.2.2.11 0 .2-.09.2-.2v-6.68c0-.11-.09-.2-.2-.2zm1.74-2.88c-.28 0-.55.06-.8.16v8.43c.27.09.55.15.84.15 2.5 0 4.53-2.03 4.53-4.53s-2.03-4.21-4.57-4.21z"/>
+              </svg>
+              <span>SoundCloud</span>
             </div>
           )}
 
@@ -612,13 +731,28 @@ export const PlayerBar = forwardRef<PlayerBarRef, PlayerBarProps>(({
           )}
 
           {/* Open in YouTube Direct Link */}
-          {activeTrack?.webpage_url && (
+          {currentProvider === 'youtube' && activeTrack?.webpage_url && (
             <a
               href={activeTrack.webpage_url}
               target="_blank"
               rel="noopener noreferrer"
               className="player-icon-link"
               title="Open on YouTube"
+            >
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+              </svg>
+            </a>
+          )}
+
+          {/* Open in SoundCloud Direct Link */}
+          {currentProvider === 'soundcloud' && (activeTrack?.permalinkUrl || activeTrack?.webpage_url || activeTrack?.external_url) && (
+            <a
+              href={(activeTrack.permalinkUrl || activeTrack.webpage_url || activeTrack.external_url) ?? undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="player-icon-link soundcloud-icon-link"
+              title="Open on SoundCloud"
             >
               <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                 <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>

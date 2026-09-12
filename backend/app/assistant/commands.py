@@ -12,6 +12,8 @@ class CommandAction(str, Enum):
     MUSIC_SEARCH_PLAY = "music_search_play"
     MUSIC_PLAY = "music_play"
     YOUTUBE_PLAY = "youtube_play"
+    SOUNDCLOUD_PLAY = "soundcloud_play"
+    SOUNDCLOUD_SEARCH = "soundcloud_search"
     MUSIC_PAUSE = "music_pause"
     MUSIC_RESUME = "music_resume"
     MUSIC_NEXT = "music_next"

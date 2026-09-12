@@ -203,6 +203,49 @@
   transform: scale(1.03);
 }
 
+.btn-soundcloud-play {
+  background: #ff5500;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(255, 85, 0, 0.35);
+}
+
+.btn-soundcloud-play:hover {
+  background: #e04a00;
+  transform: scale(1.03);
+}
+
+.btn-soundcloud-play.now-playing {
+  background: #ff7700;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(255, 119, 0, 0.5);
+}
+
+.btn-soundcloud-link:hover {
+  color: #ff5500;
+  border-color: rgba(255, 85, 0, 0.4);
+}
+
+.card-access-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+.card-access-badge.badge-preview {
+  background: rgba(234, 179, 8, 0.15);
+  border: 1px solid rgba(234, 179, 8, 0.3);
+  color: #facc15;
+}
+
+.card-access-badge.badge-blocked {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
 .btn-disabled-action {
   background: rgba(255, 255, 255, 0.05);
   color: rgba(255, 255, 255, 0.4);

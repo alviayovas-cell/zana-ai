@@ -98,10 +98,14 @@ class ToolExecutor:
         try:
             if tool_name == "music_play":
                 return await self._music_play(arguments, ctx)
+            elif tool_name == "soundcloud_search":
+                return await self._soundcloud_search(arguments, ctx)
             elif tool_name == "youtube_search":
                 return await self._youtube_search(arguments, ctx)
             elif tool_name in ("music_search", "music_search_play"):
-                if arguments.get("provider") == "youtube":
+                if arguments.get("provider") == "soundcloud":
+                    return await self._music_play(arguments, ctx)
+                elif arguments.get("provider") == "youtube":
                     return await self._music_play(arguments, ctx)
                 return await self._music_search(arguments, ctx)
             elif tool_name == "artist_search":
@@ -154,11 +158,11 @@ class ToolExecutor:
         self, args: Dict[str, Any], ctx: Optional[ConversationContext]
     ) -> ToolResult:
         """
-        Play a song or music video in the Zana embedded player.
-        Defaults to YouTube provider using official YouTube Data API v3 and IFrame Player.
-        Supports explicit Spotify routing.
+        Play a song in the Zana player.
+        Defaults to SoundCloud provider for in-page audio streaming.
+        Supports explicit YouTube and Spotify routing.
         """
-        provider = str(args.get("provider", "youtube")).lower().strip()
+        provider = str(args.get("provider", "soundcloud")).lower().strip()
         query = str(args.get("query", args.get("track", ""))).strip()
         artist_hint = args.get("artist")
 
@@ -177,48 +181,131 @@ class ToolExecutor:
         if provider == "spotify":
             return await self._music_search(args, ctx)
 
-        # Default provider: YouTube
-        logger.info(f"[AI-BRAIN] _music_play (YouTube): query={query!r}, artist={artist_hint!r}")
-        yt_res = youtube_service.search_youtube(
+        if provider == "youtube":
+            logger.info(f"[AI-BRAIN] _music_play (YouTube): query={query!r}, artist={artist_hint!r}")
+            yt_res = youtube_service.search_youtube(
+                query=query,
+                limit=10,
+                artist_hint=artist_hint,
+            )
+            best = yt_res.get("best_match")
+            if yt_res.get("success") and best:
+                from app.services.mongo_service import mongo_service
+                sid = ctx.session_id if ctx else "anonymous"
+                mongo_service.save_music_search_background(
+                    session_id=sid,
+                    query=query,
+                    track_id=best.get("videoId"),
+                    title=best.get("title"),
+                    artist=best.get("artist"),
+                    album=best.get("channelTitle"),
+                    spotify_url=best.get("url"),
+                )
+                return ToolResult(
+                    success=True,
+                    tool="music_play",
+                    data={
+                        "query": query,
+                        "provider": "youtube",
+                        "videoId": best.get("videoId"),
+                        "title": best.get("title"),
+                        "artist": best.get("artist"),
+                        "url": best.get("url"),
+                    },
+                    track_title=best.get("title"),
+                    track_artist=best.get("artist"),
+                    track_payload=best,
+                )
+            err_msg = yt_res.get("message") or f'Could not find "{query}" on YouTube.'
+            return ToolResult(
+                success=False,
+                tool="music_play",
+                error=err_msg,
+            )
+
+        # Default provider: SoundCloud
+        from app.services.soundcloud_service import soundcloud_service
+        logger.info(f"[AI-BRAIN] _music_play (SoundCloud): query={query!r}, artist={artist_hint!r}")
+        sc_res = soundcloud_service.search_and_resolve_playable(
             query=query,
-            limit=10,
             artist_hint=artist_hint,
         )
 
-        best = yt_res.get("best_match")
-        if yt_res.get("success") and best:
+        best = sc_res.get("best_match")
+        if sc_res.get("success") and best:
+            if best.get("access") == "blocked":
+                return ToolResult(
+                    success=False,
+                    tool="music_play",
+                    error="I found the song, but this SoundCloud track is not available for playback.",
+                    track_title=best.get("title"),
+                    track_artist=best.get("artist"),
+                    track_payload=best,
+                )
+
             from app.services.mongo_service import mongo_service
             sid = ctx.session_id if ctx else "anonymous"
             mongo_service.save_music_search_background(
                 session_id=sid,
                 query=query,
-                track_id=best.get("videoId"),
+                track_id=best.get("urn") or best.get("id"),
                 title=best.get("title"),
                 artist=best.get("artist"),
-                album=best.get("channelTitle"),
-                spotify_url=best.get("url"),
+                album=best.get("creator"),
+                spotify_url=best.get("permalinkUrl") or best.get("webpage_url"),
             )
             return ToolResult(
                 success=True,
                 tool="music_play",
                 data={
                     "query": query,
-                    "provider": "youtube",
-                    "videoId": best.get("videoId"),
+                    "provider": "soundcloud",
+                    "id": best.get("id"),
+                    "urn": best.get("urn"),
                     "title": best.get("title"),
                     "artist": best.get("artist"),
-                    "url": best.get("url"),
+                    "audio_url": best.get("audio_url"),
+                    "url": best.get("permalinkUrl") or best.get("webpage_url"),
                 },
                 track_title=best.get("title"),
                 track_artist=best.get("artist"),
                 track_payload=best,
             )
 
-        err_msg = yt_res.get("message") or f'Could not find "{query}" on YouTube.'
+        err_msg = sc_res.get("message") or f'I couldn\'t find a playable SoundCloud result for "{query}".'
         return ToolResult(
             success=False,
             tool="music_play",
             error=err_msg,
+        )
+
+    async def _soundcloud_search(
+        self, args: Dict[str, Any], ctx: Optional[ConversationContext]
+    ) -> ToolResult:
+        """Search SoundCloud with deterministic ranking."""
+        from app.services.soundcloud_service import soundcloud_service
+        query = str(args.get("query", "")).strip()
+        artist_hint = args.get("artist")
+        limit = int(args.get("limit", 10))
+
+        if not query:
+            return ToolResult(success=False, tool="soundcloud_search", error="No search query provided.")
+
+        res = soundcloud_service.search_tracks(query=query, artist_hint=artist_hint, limit=limit)
+        if res.get("success"):
+            best = res.get("best_match")
+            return ToolResult(
+                success=True,
+                tool="soundcloud_search",
+                data=res,
+                track_title=best.get("title") if best else None,
+                track_artist=best.get("artist") if best else None,
+                track_payload=best,
+            )
+        return ToolResult(
+            success=False,
+            tool="soundcloud_search",
+            error=res.get("message", "SoundCloud search returned no results."),
         )
 
     async def _youtube_search(
@@ -385,30 +472,43 @@ class ToolExecutor:
         logger.info(f"[AI-BRAIN] music_next: searching for next track like {next_query!r}")
 
         try:
-            track_info = free_music_service.search_and_extract(next_query)
+            sc_res = soundcloud_service.search_tracks(next_query, limit=10)
+            candidates = sc_res.get("tracks", []) if sc_res.get("success") else []
+            next_track = None
+            for t in candidates:
+                if ctx and ctx.last_played_track and t.get("title", "").strip().lower() == ctx.last_played_track.strip().lower():
+                    continue
+                next_track = t
+                break
+
+            if not next_track:
+                alt_res = soundcloud_service.search_tracks("popular hits", limit=10)
+                if alt_res.get("success") and alt_res.get("tracks"):
+                    for t in alt_res["tracks"]:
+                        if ctx and ctx.last_played_track and t.get("title", "").strip().lower() == ctx.last_played_track.strip().lower():
+                            continue
+                        next_track = t
+                        break
+
+            if next_track:
+                if not next_track.get("audio_url"):
+                    stream_url = soundcloud_service.resolve_playable_stream(
+                        next_track.get("urn") or str(next_track.get("id"))
+                    )
+                    if stream_url:
+                        next_track["audio_url"] = stream_url
+
+                return ToolResult(
+                    success=True,
+                    tool="music_next",
+                    data={"query": next_query},
+                    track_title=next_track.get("title", next_query),
+                    track_artist=next_track.get("artist", "Unknown Artist"),
+                    track_payload=next_track,
+                    action="play",
+                )
         except Exception as exc:
             logger.error(f"[AI-BRAIN] music_next search error: {exc}")
-            track_info = None
-
-        if track_info and track_info.get("audio_url"):
-            payload = {
-                "id": track_info.get("id"),
-                "title": track_info.get("title", next_query),
-                "artist": track_info.get("artist", "Unknown Artist"),
-                "album_art": track_info.get("album_art"),
-                "audio_url": track_info.get("audio_url"),
-                "duration": track_info.get("duration", 0),
-                "webpage_url": track_info.get("webpage_url"),
-            }
-            return ToolResult(
-                success=True,
-                tool="music_next",
-                data={"query": next_query},
-                track_title=payload["title"],
-                track_artist=payload["artist"],
-                track_payload=payload,
-                action="play",
-            )
 
         return ToolResult(
             success=False,

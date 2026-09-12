@@ -22,6 +22,7 @@ from app.schemas.chat import ChatResponse, SuggestionItem, TrackPayload
 from app.assistant.commands import CommandAction, ParsedCommand
 from app.services.spotify_service import spotify_service
 from app.services.free_music_service import free_music_service
+from app.services.soundcloud_service import soundcloud_service
 from app.core.logging_config import logger
 
 # Phase 4: AI Brain + context manager
@@ -48,9 +49,9 @@ class Orchestrator:
         if play_match:
             song_query = play_match.group(1).strip()
             return ParsedCommand(
-                action=CommandAction.MUSIC_SEARCH_PLAY,
+                action=CommandAction.MUSIC_PLAY,
                 query=song_query,
-                parameters={"query": song_query}
+                parameters={"query": song_query, "provider": "soundcloud"}
             )
 
         return ParsedCommand(action=CommandAction.UNKNOWN, query=text)
@@ -124,40 +125,123 @@ class Orchestrator:
                 ]
             )
 
-        # ── Handle Music Play (YouTube Provider embedded playback) ───────────
-        elif command.action in (CommandAction.MUSIC_PLAY, CommandAction.YOUTUBE_PLAY):
+        # ── Handle Music Play (SoundCloud Provider primary / YouTube optional) ───
+        elif command.action in (CommandAction.MUSIC_PLAY, CommandAction.SOUNDCLOUD_PLAY, CommandAction.YOUTUBE_PLAY):
             query = command.parameters.get("query") or command.query or message
             artist_hint = command.parameters.get("artist")
-            provider = command.parameters.get("provider", "youtube")
+            provider = command.parameters.get("provider", "soundcloud")
             logger.info(f"[ORCH] Music playback on {provider}: '{query}' (artist={artist_hint!r})")
 
             ctx = context_manager.get_or_create(sid)
             ctx.add_user_message(message)
             ctx.update_music_context(query=query, artist=artist_hint)
 
-            if command.parameters.get("context_play") or query.lower().strip() in ("this", "it", "current song", "current track", "play on youtube", "play this on youtube"):
+            if command.parameters.get("context_play") or query.lower().strip() in ("this", "it", "current song", "current track", "play on soundcloud", "play this on soundcloud", "play on youtube"):
                 if ctx.has_music_context() and ctx.last_played_track:
                     query = f"{ctx.last_played_track} {ctx.last_played_artist or ''}".strip()
                     artist_hint = ctx.last_played_artist or artist_hint
 
-            from app.services.youtube_service import youtube_service
-            yt_res = youtube_service.search_youtube(
+            # Provider 1: YouTube (explicit only)
+            if provider == "youtube":
+                from app.services.youtube_service import youtube_service
+                yt_res = youtube_service.search_youtube(
+                    query=query,
+                    limit=10,
+                    artist_hint=artist_hint,
+                )
+                if yt_res.get("success") and yt_res.get("best_match"):
+                    best = yt_res["best_match"]
+                    from app.services.mongo_service import mongo_service
+                    mongo_service.save_music_search_background(
+                        session_id=sid,
+                        query=query,
+                        track_id=best.get("videoId"),
+                        title=best.get("title"),
+                        artist=best.get("artist"),
+                        album=best.get("channelTitle"),
+                        spotify_url=best.get("url"),
+                    )
+
+                    payload = TrackPayload(**best)
+                    ctx.update_music_context(
+                        query=query,
+                        track=payload.title,
+                        artist=payload.artist,
+                    )
+
+                    artist_text = f" by **{payload.artist}**" if payload.artist else ""
+                    reply = f"Playing **{payload.title}**{artist_text} from YouTube."
+                    ctx.add_assistant_message(reply)
+
+                    return ChatResponse(
+                        message=reply,
+                        session_id=session_id,
+                        track=payload,
+                        action="play",
+                        action_value={"provider": "youtube", "videoId": payload.video_id or payload.id},
+                        intent="music_play",
+                        confidence=0.98,
+                        tool="music_play",
+                        execution_status="success",
+                        suggestions=[
+                            SuggestionItem(label="Pause", action_type="music_pause"),
+                            SuggestionItem(label="Next song", action_type="music_next"),
+                            SuggestionItem(label="Open on YouTube", action_type="open_youtube", payload=payload.webpage_url),
+                        ]
+                    )
+                else:
+                    err_msg = yt_res.get("message") or f'Could not find "{query}" on YouTube.'
+                    ctx.add_assistant_message(err_msg)
+                    return ChatResponse(
+                        message=err_msg,
+                        session_id=session_id,
+                        intent="music_play",
+                        confidence=0.98,
+                        tool="music_play",
+                        execution_status="failed",
+                        suggestions=[
+                            SuggestionItem(label="Search on Spotify", action_type="music_search"),
+                            SuggestionItem(label="Try another song", action_type="music_play"),
+                        ]
+                    )
+
+            # Provider 2: SoundCloud (Default Audio Playback Provider)
+            sc_res = soundcloud_service.search_and_resolve_playable(
                 query=query,
-                limit=10,
                 artist_hint=artist_hint,
             )
 
-            if yt_res.get("success") and yt_res.get("best_match"):
-                best = yt_res["best_match"]
+            if sc_res.get("success") and sc_res.get("best_match"):
+                best = sc_res["best_match"]
+                # Playable verification check
+                if best.get("access") == "blocked":
+                    blocked_msg = "I found the song, but this SoundCloud track is not available for playback."
+                    ctx.add_assistant_message(blocked_msg)
+                    return ChatResponse(
+                        message=blocked_msg,
+                        session_id=session_id,
+                        track=TrackPayload(**best),
+                        action=None,
+                        intent="music_play",
+                        confidence=0.98,
+                        tool="music_play",
+                        execution_status="failed",
+                        suggestions=[
+                            SuggestionItem(label="Try another song", action_type="music_play"),
+                            SuggestionItem(label="Open on SoundCloud", action_type="open_soundcloud", payload=best.get("permalinkUrl") or best.get("webpage_url")),
+                            SuggestionItem(label="Search on Spotify", action_type="music_search"),
+                        ]
+                    )
+
                 from app.services.mongo_service import mongo_service
                 mongo_service.save_music_search_background(
                     session_id=sid,
                     query=query,
-                    track_id=best.get("videoId"),
+                    track_id=best.get("urn") or best.get("id"),
                     title=best.get("title"),
                     artist=best.get("artist"),
-                    album=best.get("channelTitle"),
-                    spotify_url=best.get("url"),
+                    album=best.get("creator"),
+                    spotify_url=best.get("permalinkUrl") or best.get("webpage_url"),
                 )
 
                 payload = TrackPayload(**best)
@@ -168,7 +252,7 @@ class Orchestrator:
                 )
 
                 artist_text = f" by **{payload.artist}**" if payload.artist else ""
-                reply = f"Playing **{payload.title}**{artist_text} from YouTube."
+                reply = f"I found **{payload.title}**{artist_text}. Starting playback."
                 ctx.add_assistant_message(reply)
 
                 return ChatResponse(
@@ -176,7 +260,7 @@ class Orchestrator:
                     session_id=session_id,
                     track=payload,
                     action="play",
-                    action_value={"provider": "youtube", "videoId": payload.video_id or payload.id},
+                    action_value={"provider": "soundcloud", "id": payload.id, "urn": payload.urn},
                     intent="music_play",
                     confidence=0.98,
                     tool="music_play",
@@ -184,11 +268,11 @@ class Orchestrator:
                     suggestions=[
                         SuggestionItem(label="Pause", action_type="music_pause"),
                         SuggestionItem(label="Next song", action_type="music_next"),
-                        SuggestionItem(label="Open on YouTube", action_type="open_youtube", payload=payload.webpage_url),
+                        SuggestionItem(label="Open on SoundCloud", action_type="open_soundcloud", payload=payload.permalinkUrl or payload.webpage_url),
                     ]
                 )
             else:
-                err_msg = yt_res.get("message") or f'Could not find "{query}" on YouTube.'
+                err_msg = sc_res.get("message") or "I couldn't find a playable SoundCloud result for that song."
                 ctx.add_assistant_message(err_msg)
                 return ChatResponse(
                     message=err_msg,
@@ -196,6 +280,54 @@ class Orchestrator:
                     intent="music_play",
                     confidence=0.98,
                     tool="music_play",
+                    execution_status="failed",
+                    suggestions=[
+                        SuggestionItem(label="Search on Spotify", action_type="music_search"),
+                        SuggestionItem(label="Try another song", action_type="music_play"),
+                    ]
+                )
+
+        # ── Handle Explicit SoundCloud Search ────────────────────────────────
+        elif command.action == CommandAction.SOUNDCLOUD_SEARCH:
+            query = command.parameters.get("query") or command.query or message
+            artist_hint = command.parameters.get("artist")
+            logger.info(f"[ORCH] SoundCloud search for: '{query}' (artist={artist_hint!r})")
+
+            ctx = context_manager.get_or_create(sid)
+            ctx.add_user_message(message)
+
+            sc_res = soundcloud_service.search_tracks(query=query, artist_hint=artist_hint, limit=10)
+            if sc_res.get("success") and sc_res.get("best_match"):
+                best = sc_res["best_match"]
+                payload = TrackPayload(**best)
+                ctx.update_music_context(query=query, track=payload.title, artist=payload.artist)
+                artist_text = f" by **{payload.artist}**" if payload.artist else ""
+                reply = f"I found **{payload.title}**{artist_text} on SoundCloud."
+                ctx.add_assistant_message(reply)
+                return ChatResponse(
+                    message=reply,
+                    session_id=session_id,
+                    track=payload,
+                    action=None,
+                    intent="soundcloud_search",
+                    confidence=0.98,
+                    tool="soundcloud_search",
+                    execution_status="success",
+                    suggestions=[
+                        SuggestionItem(label="Play song", action_type="music_play"),
+                        SuggestionItem(label="Open on SoundCloud", action_type="open_soundcloud", payload=payload.permalinkUrl or payload.webpage_url),
+                        SuggestionItem(label="Search on Spotify", action_type="music_search"),
+                    ]
+                )
+            else:
+                err_msg = sc_res.get("message") or f"I couldn't find a playable SoundCloud result for '{query}'."
+                ctx.add_assistant_message(err_msg)
+                return ChatResponse(
+                    message=err_msg,
+                    session_id=session_id,
+                    intent="soundcloud_search",
+                    confidence=0.98,
+                    tool="soundcloud_search",
                     execution_status="failed",
                     suggestions=[
                         SuggestionItem(label="Search on Spotify", action_type="music_search"),
@@ -369,17 +501,37 @@ class Orchestrator:
                 next_query = "popular hits"
 
             logger.info(f"[ORCH] Next track: searching for '{next_query}'")
-            track_info = free_music_service.search_and_extract(next_query)
-            if track_info and track_info.get("audio_url"):
-                payload = TrackPayload(
-                    id=track_info.get("id"),
-                    title=track_info.get("title", next_query),
-                    artist=track_info.get("artist", "Unknown Artist"),
-                    album_art=track_info.get("album_art"),
-                    audio_url=track_info.get("audio_url"),
-                    duration=track_info.get("duration", 0),
-                    webpage_url=track_info.get("webpage_url"),
-                )
+            sc_res = soundcloud_service.search_tracks(next_query, limit=10)
+            candidates = sc_res.get("tracks", []) if sc_res.get("success") else []
+
+            # Choose the first track that isn't the currently playing track
+            next_track = None
+            for t in candidates:
+                if ctx.last_played_track and t.get("title", "").strip().lower() == ctx.last_played_track.strip().lower():
+                    continue
+                next_track = t
+                break
+
+            # If all candidates match current track or none found, search popular/trending
+            if not next_track:
+                alt_res = soundcloud_service.search_tracks("popular hits", limit=10)
+                if alt_res.get("success") and alt_res.get("tracks"):
+                    for t in alt_res["tracks"]:
+                        if ctx.last_played_track and t.get("title", "").strip().lower() == ctx.last_played_track.strip().lower():
+                            continue
+                        next_track = t
+                        break
+
+            if next_track:
+                # Ensure audio_url is resolved
+                if not next_track.get("audio_url"):
+                    stream_url = soundcloud_service.resolve_playable_stream(
+                        next_track.get("urn") or str(next_track.get("id"))
+                    )
+                    if stream_url:
+                        next_track["audio_url"] = stream_url
+
+                payload = TrackPayload(**next_track)
                 ctx.update_music_context(
                     query=next_query,
                     track=payload.title,
@@ -395,6 +547,7 @@ class Orchestrator:
                     suggestions=[
                         SuggestionItem(label="Pause", action_type="music_pause"),
                         SuggestionItem(label="Next song", action_type="music_next"),
+                        SuggestionItem(label="Open on SoundCloud", action_type="external_url", payload=payload.permalinkUrl or payload.webpage_url),
                     ]
                 )
             reply = "⏭️ Skipped track."

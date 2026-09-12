@@ -105,8 +105,8 @@ class YouTubeRanker:
             reasons: List[str] = []
             is_official = False
 
-            title = item.get("title", "")
-            channel = item.get("channelTitle", "")
+            title = item.get("title") or (item.get("snippet", {}).get("title", "") if isinstance(item.get("snippet"), dict) else "")
+            channel = item.get("channelTitle") or item.get("channel_title") or (item.get("snippet", {}).get("channelTitle", "") if isinstance(item.get("snippet"), dict) else "")
             norm_title = _normalize(title)
             norm_channel = _normalize(channel)
 
@@ -207,6 +207,11 @@ class YouTubeRanker:
         ranked_results = []
         for s in scored:
             enhanced = dict(s.item)
+            if "videoId" not in enhanced:
+                if isinstance(enhanced.get("id"), dict) and "videoId" in enhanced["id"]:
+                    enhanced["videoId"] = enhanced["id"]["videoId"]
+                elif isinstance(enhanced.get("id"), str):
+                    enhanced["videoId"] = enhanced["id"]
             enhanced["ranking_score"] = round(s.score, 2)
             enhanced["ranking_reasons"] = s.reasons
             enhanced["is_official"] = s.is_official

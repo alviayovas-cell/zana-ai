@@ -356,6 +356,12 @@
   color: #1ed760;
 }
 
+.player-provider-tag.tag-soundcloud {
+  background: rgba(255, 85, 0, 0.12);
+  border: 1px solid rgba(255, 85, 0, 0.35);
+  color: #ff5500;
+}
+
 .player-icon-link {
   color: var(--text-secondary, #9ca3af);
   display: flex;
@@ -370,6 +376,10 @@
   color: #ff4d4d;
   background: rgba(255, 255, 255, 0.08);
   transform: scale(1.08);
+}
+
+.player-icon-link.soundcloud-icon-link:hover {
+  color: #ff5500;
 }
 
 /* ── Video Toggle Button ───────────────────── */

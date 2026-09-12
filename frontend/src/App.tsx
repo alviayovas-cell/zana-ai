@@ -44,9 +44,6 @@ export default function App() {
 
   const handlePlayTrack = useCallback((track: TrackPayload) => {
     setCurrentTrack(track);
-    if (playerRef.current) {
-      playerRef.current.play();
-    }
   }, []);
 
   const handleActionReceived = useCallback((action: string, value?: any) => {

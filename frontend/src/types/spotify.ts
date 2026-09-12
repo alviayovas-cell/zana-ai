@@ -15,6 +15,7 @@ export interface SpotifyTrack {
   album_art?: string;
   uri?: string;
   external_url?: string;
+  duration_ms?: number;
 }
 
 export interface SpotifyPlaybackState {

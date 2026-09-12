@@ -194,7 +194,8 @@ def _fast_context_check(
 SYSTEM_PROMPT = """You are Zana's intent classification engine. Analyze the user's message and return ONLY valid JSON.
 
 Available intents:
-- music_play: user wants to play a song/music video directly (defaults to YouTube playback, e.g. "play Pattuma", "play on YouTube", "listen to Believer")
+- music_play: user wants to play a song directly (defaults to SoundCloud audio playback, e.g. "play Pattuma", "listen to Believer")
+- soundcloud_search: user explicitly wants to search SoundCloud
 - music_search: user wants to find, search for songs, mood, genre, or topic (e.g. "search Tamil songs", "find songs by Rahman")
 - artist_search: user wants to find songs by a specific artist
 - album_search: user wants to find an album
@@ -216,13 +217,14 @@ Rules:
    - "query": full query string (e.g. "Pattuma by Sai Abhyankkar")
    - "track": specific track title if identified (e.g. "Pattuma"), else null
    - "artist": artist name if identified (e.g. "Sai Abhyankkar"), else null
-   - "provider": "youtube" (default) or "spotify" if explicitly mentioned
+   - "provider": "soundcloud" (default) or "spotify" if explicitly requested or "youtube" if explicitly requested
    Set requires_tool=true, tool="music_play".
-2. For music_search, extract "query", "artist", "language", set requires_tool=true, tool="music_search".
-3. For artist_search, extract "artist" and set tool="artist_search".
-4. For album_search, extract "album" and "artist", set tool="album_search".
-5. For open_spotify, extract "query" and set tool="open_spotify".
-5. For music_volume, extract "volume" argument as integer 0-100.
+2. For soundcloud_search, extract "query", "artist", set requires_tool=true, tool="soundcloud_search".
+3. For music_search, extract "query", "artist", "language", set requires_tool=true, tool="music_search".
+4. For artist_search, extract "artist" and set tool="artist_search".
+5. For album_search, extract "album" and "artist", set tool="album_search".
+6. For open_spotify, extract "query" and set tool="open_spotify".
+7. For music_volume, extract "volume" argument as integer 0-100.
 6. Keep response_hint short and natural (max 15 words).
 7. confidence should reflect certainty (0.0-1.0).
 
